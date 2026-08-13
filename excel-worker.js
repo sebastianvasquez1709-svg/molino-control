@@ -152,7 +152,7 @@ self.onmessage = async (e) => {
           tipo: tipo || 'Factura[FT]',
           cliente: client,
           producto: product,
-          detalle,
+          detalle: detail,
           unidad: get(o, ['UM']),
           kg: n(get(o, ['SALIDA'])),
           sacos: n(get(o, ['VENTAS * SACOS'])),
