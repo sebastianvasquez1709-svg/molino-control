@@ -10,6 +10,7 @@ self.onmessage = async (e) => {
     const rowsOf = name => name && wb.Sheets[name] ? XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: null, raw: true }) : [];
     const rowsPart = p => rowsOf(sheetPart(p));
     const norm = v => String(v ?? '').toUpperCase().replace(/[.\-\s]/g, '');
+    const normName = v => String(v ?? '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9]+/g,' ').trim().replace(/\s+/g,' ');
     const n = v => {
       if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
       const x = String(v ?? '').replace(/\$/g, '').replace(/\s/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
@@ -128,6 +129,10 @@ self.onmessage = async (e) => {
     }
 
     // ---------- BASE DE DATOS ----------
+    const nameToRut = new Map();
+    const rutToName = new Map();
+    for (const ref of libroByFolio.values()) { const nn=normName(ref.cliente); const rr=norm(ref.rut); if(nn && rr && !nameToRut.has(nn)) nameToRut.set(nn,String(ref.rut)); if(rr && ref.cliente && !rutToName.has(rr)) rutToName.set(rr,String(ref.cliente)); }
+
     const baseRows = rowsPart('BASE DE DATOS');
     const baseObjects = objects(baseRows, ['CODIGO', 'ITEM', 'FOLIO', 'ORIGEN/DESTINO'], 120000);
     const baseInvoiceLines = [];
@@ -217,11 +222,12 @@ self.onmessage = async (e) => {
 
     const clientsMap = new Map();
     const addClient = (rut, nombre, doc) => {
-      const key = norm(rut || nombre);
+      const resolvedRut = rut || (nombre ? nameToRut.get(normName(nombre)) : '') || '';
+      const key = norm(resolvedRut || nombre);
       if (!key) return;
-      if (!clientsMap.has(key)) clientsMap.set(key, { key, rut: String(rut || ''), nombre: String(nombre || '').trim() || '(Sin nombre)', documentos: [], neto: 0, iva: 0, total: 0 });
+      if (!clientsMap.has(key)) clientsMap.set(key, { key, rut: String(resolvedRut || ''), nombre: String(nombre || rutToName.get(norm(resolvedRut)) || '').trim() || '(Sin nombre)', documentos: [], neto: 0, iva: 0, total: 0 });
       const c = clientsMap.get(key);
-      if (rut && !c.rut) c.rut = String(rut);
+      if (resolvedRut && !c.rut) c.rut = String(resolvedRut);
       if (nombre && (!c.nombre || c.nombre === '(Sin nombre)')) c.nombre = String(nombre).trim();
       if (doc) { c.documentos.push(doc); c.neto += n(doc.neto); c.iva += n(doc.iva); c.total += n(doc.total); }
     };
@@ -231,14 +237,15 @@ self.onmessage = async (e) => {
     for (const inv of baseInvoiceLines) {
       const ref = libroByFolio.get(norm(inv.folio));
       if (ref) { inv.rut = inv.rut || ref.rut; inv.cliente = inv.cliente || ref.cliente; if (!inv.fecha) inv.fecha = ref.fecha; }
-      else inv.rut = inv.rut || '';
+      if (!inv.rut && inv.cliente) inv.rut = nameToRut.get(normName(inv.cliente)) || '';
+      if (!inv.cliente && inv.rut) inv.cliente = rutToName.get(norm(inv.rut)) || '';
     }
 
     // ---------- FACTURAS AGRUPADAS ----------
     post('Organizando facturas y productos', 68);
     const invoiceMap = new Map();
     for (const line of baseInvoiceLines) {
-      const key = norm(line.folio) + '|' + norm(line.cliente || '');
+      const key = norm(line.folio);
       if (!invoiceMap.has(key)) invoiceMap.set(key, { folio: line.folio, fecha: line.fecha, tipo: 'FACTURA', cliente: line.cliente || '', rut: line.rut || '', productos: new Set(), lineas: 0, sacos: 0, kg: 0, neto: 0, iva: 0, ivaHarina: 0, total: 0, fuente: line.fuente, estado: line.estado || '' });
       const inv = invoiceMap.get(key);
       if (line.producto) inv.productos.add(String(line.producto));
@@ -253,7 +260,7 @@ self.onmessage = async (e) => {
         invoiceMap.set(key + '|LIBRO', { folio: ref.folio, fecha: ref.fecha, tipo: 'FACTURA', cliente: ref.cliente || '', rut: ref.rut || '', productos: new Set(), lineas: 0, sacos: 0, kg: 0, neto: ref.netoAfecto, iva: ref.iva, ivaHarina: ref.ivaHarina, total: ref.total, fuente: ref.fuente, estado: ref.estado || '' });
       }
     }
-    const invoices = [...invoiceMap.values()].map(x => ({ ...x, productos: [...x.productos].filter(Boolean) })).sort((a,b)=>String(a.folio).localeCompare(String(b.folio),'es',{numeric:true}));
+    const invoices = [...invoiceMap.values()].map(x => ({ ...x, rut: x.rut || nameToRut.get(normName(x.cliente)) || '', cliente: x.cliente || rutToName.get(norm(x.rut)) || '', productos: [...x.productos].filter(Boolean) })).sort((a,b)=>String(a.folio).localeCompare(String(b.folio),'es',{numeric:true}));
 
     // Products: source real names plus manual fallbacks used by the operation.
     ['HARINA GRANEL','HARINA 25 KG','HARINA 10 KG','HARINILLA','GRITZ SEMOL','H.F. MAIZ','ZOOTECNICA','GERMEN','SEMOLINA','GRITZ MEDI','SALVADO','OSN'].forEach(x=>productSet.add(x));
@@ -274,13 +281,13 @@ self.onmessage = async (e) => {
 
     post('Finalizando índices locales', 96);
     const snapshot = {
-      version: '9.0',
+      version: '18.0',
       fileName: e.data.fileName || 'Maestro Excel',
       lastLoaded: Date.now(),
       sheets,
       metrics: { ine, sacos: { ventasSacos, kgSacos, items: sacItems }, granel: { totalGranel, items: granelItems }, iva: iv },
       documents,
-      clients: [...clientsMap.values()].sort((a,b)=>a.nombre.localeCompare(b.nombre,'es')),
+      clients: [...clientsMap.values()].map(c=>({...c,zona:c.zona||'',destino:c.destino||''})).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es')),
       guides,
       nc,
       invoices,
