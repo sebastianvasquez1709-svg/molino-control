@@ -132,6 +132,8 @@ self.onmessage = async (e) => {
     const nameToRut = new Map();
     const rutToName = new Map();
     for (const ref of libroByFolio.values()) { const nn=normName(ref.cliente); const rr=norm(ref.rut); if(nn && rr && !nameToRut.has(nn)) nameToRut.set(nn,String(ref.rut)); if(rr && ref.cliente && !rutToName.has(rr)) rutToName.set(rr,String(ref.cliente)); }
+    // Segunda pasada: resolver RUT↔cliente desde todas las filas de LIBRO, no solo folios únicos.
+    for (const o of objects(libroRows, ['FOLIO'], 200000)) { const cliente=get(o,['NOMBRE CLIENTE','CLIENTE','RAZON SOCIAL']); const rut=get(o,['R.U.T. CLIENTE','RUT','RUT CLIENTE']); const nn=normName(cliente), rr=norm(rut); if(nn && rr && !nameToRut.has(nn)) nameToRut.set(nn,String(rut)); if(rr && cliente && !rutToName.has(rr)) rutToName.set(rr,String(cliente)); }
 
     const baseRows = rowsPart('BASE DE DATOS');
     const baseObjects = objects(baseRows, ['CODIGO', 'ITEM', 'FOLIO', 'ORIGEN/DESTINO'], 120000);
