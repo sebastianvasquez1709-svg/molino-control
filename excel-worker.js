@@ -17,6 +17,12 @@ self.onmessage = async (e) => {
       const z = parseFloat(x);
       return Number.isFinite(z) ? z : 0;
     };
+    const dateISO = v => {
+      const s = String(v ?? '').trim();
+      const m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/);
+      if (m) return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+      const d = new Date(s); return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0,10);
+    };
     const headerRow = (rows, req) => {
       const r = req.map(x => x.toUpperCase());
       let best = -1, score = 0;
@@ -311,12 +317,6 @@ self.onmessage = async (e) => {
     const iv = documents.filter(d=>d.fuente===sheetPart('LIBRO')).reduce((a,d)=>({neto:a.neto+n(d.neto),iva:a.iva+n(d.iva),total:a.total+n(d.total),docs:a.docs+1}),{neto:0,iva:0,total:0,docs:0});
 
     // ---------- ORDEN + RIESGO DE CRÉDITO ----------
-    const dateISO = v => {
-      const s = String(v ?? '').trim();
-      const m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/);
-      if (m) return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
-      const d = new Date(s); return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0,10);
-    };
     const latestFirst = rows => [...(rows||[])].sort((a,b)=>{
       const da=dateISO(a.fecha), db=dateISO(b.fecha);
       return (db||'').localeCompare(da||'') || String(b.folio||'').localeCompare(String(a.folio||''),'es',{numeric:true});
@@ -328,8 +328,8 @@ self.onmessage = async (e) => {
       const nc = docs.filter(d=>/CREDITO|DEBITO|NOTA DE CREDITO|NOTA DE DEBITO/i.test(String(d.tipo||'')));
       const ncAbs = nc.reduce((a,d)=>a+Math.abs(n(d.total)),0);
       const today = Date.now();
-      const recent90 = invs.filter(i=>{const d=dateISO(i.fecha); return d && today-Date.parse(d+'T23:59:59') <= 90*86400000;}).length;
-      const recent180 = invs.filter(i=>{const d=dateISO(i.fecha); return d && today-Date.parse(d+'T23:59:59') <= 180*86400000;}).length;
+      const recent90 = invs.filter(i=>{const d=dateISO(i.fecha); if(!d)return false; const delta=today-Date.parse(d+'T23:59:59'); return delta>=0 && delta<=90*86400000;}).length;
+      const recent180 = invs.filter(i=>{const d=dateISO(i.fecha); if(!d)return false; const delta=today-Date.parse(d+'T23:59:59'); return delta>=0 && delta<=180*86400000;}).length;
       const contactFields = Number(!!client.direccion)+Number(!!client.telefono||!!client.email)+Number(!!client.comuna);
       let score=50;
       if(client.rut)score+=10;else score-=10;
@@ -367,7 +367,7 @@ self.onmessage = async (e) => {
       return client;
     }).sort((a,b)=>{const da=dateISO(a.latestPurchase),db=dateISO(b.latestPurchase);return (db||'').localeCompare(da||'')||a.nombre.localeCompare(b.nombre,'es')});
     const snapshot = {
-      version: '21.0',
+      version: '23.0',
       fileName: e.data.fileName || 'Maestro Excel',
       lastLoaded: Date.now(),
       sheets,
