@@ -222,6 +222,35 @@ self.onmessage = async (e) => {
     }
     for (const x of baseInvoiceLines) pushDoc({ ...x, netoExento: 0, neto: x.neto, ivaHarina: x.ivaHarina, ref: '' });
 
+    // ---------- CONTACTOS / DIRECCIONES ----------
+    // Busca información de contacto si alguna hoja la contiene. Si no existe en el Excel,
+    // el módulo Clientes permite registrarla manualmente y queda disponible para Despachos.
+    const contactMap = new Map();
+    const allSheetsForContacts = sheets;
+    const contactObjects = (rows, max=15000) => objects(rows, ['NOMBRE CLIENTE','CLIENTE','NOMBRE RECEPTOR','RECEPTOR','ORIGEN/DESTINO','DIRECCION','DIRECCIÓN','DOMICILIO','COMUNA','TELEFONO','TELÉFONO','CONTACTO'], max);
+    const hasContactHeaders = rows => { const txt=(rows.slice(0,35).map(r=>(r||[]).map(v=>String(v??'').toUpperCase()).join(' | ')).join(' || ')); return /(DIRECC|DOMICIL|COMUNA|TELEF|FONO|CONTACTO|CIUDAD|REGION|REGIÓN)/.test(txt) && /(CLIENTE|RECEPTOR|ORIGEN\/DESTINO|RAZON SOCIAL)/.test(txt); };
+    for (const sh of allSheetsForContacts) {
+      const rows = rowsOf(sh);
+      if (!hasContactHeaders(rows)) continue;
+      const objs = contactObjects(rows, 15000);
+      for (const o of objs) {
+        const nombre = get(o,['NOMBRE CLIENTE','CLIENTE','NOMBRE RECEPTOR','RECEPTOR','ORIGEN/DESTINO','RAZON SOCIAL']);
+        const rut = get(o,['R.U.T. CLIENTE','RUT RECEPTOR','RUT','RUT CLIENTE']);
+        const key = norm(rut) || normName(nombre);
+        if (!key) continue;
+        const direccion = get(o,['DIRECCIÓN','DIRECCION','DOMICILIO','ADDRESS','CALLE']);
+        const comuna = get(o,['COMUNA','CIUDAD','LOCALIDAD']);
+        const region = get(o,['REGIÓN','REGION']);
+        const contacto = get(o,['CONTACTO','NOMBRE CONTACTO']);
+        const telefono = get(o,['TELÉFONO','TELEFONO','FONO','CELULAR']);
+        const email = get(o,['EMAIL','CORREO']);
+        if (direccion || comuna || region || contacto || telefono || email) {
+          const prev = contactMap.get(key) || {};
+          contactMap.set(key,{direccion:direccion||prev.direccion||'',comuna:comuna||prev.comuna||'',region:region||prev.region||'',contacto:contacto||prev.contacto||'',telefono:telefono||prev.telefono||'',email:email||prev.email||''});
+        }
+      }
+    }
+
     const clientsMap = new Map();
     const addClient = (rut, nombre, doc) => {
       const resolvedRut = rut || (nombre ? nameToRut.get(normName(nombre)) : '') || '';
@@ -248,10 +277,10 @@ self.onmessage = async (e) => {
     const invoiceMap = new Map();
     for (const line of baseInvoiceLines) {
       const key = norm(line.folio);
-      if (!invoiceMap.has(key)) invoiceMap.set(key, { folio: line.folio, fecha: line.fecha, tipo: 'FACTURA', cliente: line.cliente || '', rut: line.rut || '', productos: new Set(), lineas: 0, sacos: 0, kg: 0, neto: 0, iva: 0, ivaHarina: 0, total: 0, fuente: line.fuente, estado: line.estado || '' });
+      if (!invoiceMap.has(key)) invoiceMap.set(key, { folio: line.folio, fecha: line.fecha, tipo: 'FACTURA', cliente: line.cliente || '', rut: line.rut || '', productos: new Set(), items: [], lineas: 0, sacos: 0, kg: 0, neto: 0, iva: 0, ivaHarina: 0, total: 0, fuente: line.fuente, estado: line.estado || '' });
       const inv = invoiceMap.get(key);
       if (line.producto) inv.productos.add(String(line.producto));
-      inv.lineas += 1; inv.sacos += n(line.sacos); inv.kg += n(line.kg); inv.neto += n(line.neto); inv.iva += n(line.iva); inv.ivaHarina += n(line.ivaHarina); inv.total += n(line.total);
+      inv.lineas += 1; inv.sacos += n(line.sacos); inv.kg += n(line.kg); inv.neto += n(line.neto); inv.iva += n(line.iva); inv.ivaHarina += n(line.ivaHarina); inv.total += n(line.total); inv.items.push({producto:line.producto||'',detalle:line.detalle||'',unidad:line.unidad||'',kg:n(line.kg),sacos:n(line.sacos),neto:n(line.neto),iva:n(line.iva),total:n(line.total)});
       if (!inv.rut && line.rut) inv.rut = line.rut;
       if (!inv.cliente && line.cliente) inv.cliente = line.cliente;
       if (!inv.fecha && line.fecha) inv.fecha = line.fecha;
@@ -259,10 +288,10 @@ self.onmessage = async (e) => {
     for (const [key, ref] of libroByFolio.entries()) {
       if (!/FACTURA/i.test(String(ref.tipo || ''))) continue;
       if (![...invoiceMap.values()].some(x => norm(x.folio) === key)) {
-        invoiceMap.set(key + '|LIBRO', { folio: ref.folio, fecha: ref.fecha, tipo: 'FACTURA', cliente: ref.cliente || '', rut: ref.rut || '', productos: new Set(), lineas: 0, sacos: 0, kg: 0, neto: ref.netoAfecto, iva: ref.iva, ivaHarina: ref.ivaHarina, total: ref.total, fuente: ref.fuente, estado: ref.estado || '' });
+        invoiceMap.set(key + '|LIBRO', { folio: ref.folio, fecha: ref.fecha, tipo: 'FACTURA', cliente: ref.cliente || '', rut: ref.rut || '', productos: new Set(), items: [], lineas: 0, sacos: 0, kg: 0, neto: ref.netoAfecto, iva: ref.iva, ivaHarina: ref.ivaHarina, total: ref.total, fuente: ref.fuente, estado: ref.estado || '' });
       }
     }
-    const invoices = [...invoiceMap.values()].map(x => ({ ...x, rut: x.rut || nameToRut.get(normName(x.cliente)) || '', cliente: x.cliente || rutToName.get(norm(x.rut)) || '', productos: [...x.productos].filter(Boolean) })).sort((a,b)=>String(a.folio).localeCompare(String(b.folio),'es',{numeric:true}));
+    const invoices = [...invoiceMap.values()].map(x => ({ ...x, rut: x.rut || nameToRut.get(normName(x.cliente)) || '', cliente: x.cliente || rutToName.get(norm(x.rut)) || '', productos: [...x.productos].filter(Boolean), items:x.items||[] })).sort((a,b)=>{const da=dateISO(a.fecha),db=dateISO(b.fecha);return (db||'').localeCompare(da||'')||String(b.folio).localeCompare(String(a.folio),'es',{numeric:true})});
 
     // Products: source real names plus manual fallbacks used by the operation.
     ['HARINA GRANEL','HARINA 25 KG','HARINA 10 KG','HARINILLA','GRITZ SEMOL','H.F. MAIZ','ZOOTECNICA','GERMEN','SEMOLINA','GRITZ MEDI','SALVADO','OSN'].forEach(x=>productSet.add(x));
@@ -281,20 +310,75 @@ self.onmessage = async (e) => {
     const nc = documents.filter(d => /CREDITO|DEBITO|NOTA DE CREDITO|NOTA DE DEBITO/i.test(String(d.tipo || '')));
     const iv = documents.filter(d=>d.fuente===sheetPart('LIBRO')).reduce((a,d)=>({neto:a.neto+n(d.neto),iva:a.iva+n(d.iva),total:a.total+n(d.total),docs:a.docs+1}),{neto:0,iva:0,total:0,docs:0});
 
+    // ---------- ORDEN + RIESGO DE CRÉDITO ----------
+    const dateISO = v => {
+      const s = String(v ?? '').trim();
+      const m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/);
+      if (m) return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+      const d = new Date(s); return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0,10);
+    };
+    const latestFirst = rows => [...(rows||[])].sort((a,b)=>{
+      const da=dateISO(a.fecha), db=dateISO(b.fecha);
+      return (db||'').localeCompare(da||'') || String(b.folio||'').localeCompare(String(a.folio||''),'es',{numeric:true});
+    });
+    const computeRisk = (client, clientInvoices) => {
+      const invs = clientInvoices || [];
+      const docs = client.documentos || [];
+      const invoiceTotal = invs.reduce((a,i)=>a+Math.abs(n(i.total)),0);
+      const nc = docs.filter(d=>/CREDITO|DEBITO|NOTA DE CREDITO|NOTA DE DEBITO/i.test(String(d.tipo||'')));
+      const ncAbs = nc.reduce((a,d)=>a+Math.abs(n(d.total)),0);
+      const today = Date.now();
+      const recent90 = invs.filter(i=>{const d=dateISO(i.fecha); return d && today-Date.parse(d+'T23:59:59') <= 90*86400000;}).length;
+      const recent180 = invs.filter(i=>{const d=dateISO(i.fecha); return d && today-Date.parse(d+'T23:59:59') <= 180*86400000;}).length;
+      const contactFields = Number(!!client.direccion)+Number(!!client.telefono||!!client.email)+Number(!!client.comuna);
+      let score=50;
+      if(client.rut)score+=10;else score-=10;
+      if(contactFields>=2)score+=10;else if(contactFields===1)score+=4;else score-=5;
+      if(invs.length>=10)score+=12;else if(invs.length>=5)score+=9;else if(invs.length>=1)score+=4;else score-=15;
+      if(recent90>=3)score+=10;else if(recent90>=1)score+=6;else if(recent180>=1)score+=2;else score-=15;
+      if(invoiceTotal>=10000000)score+=5;
+      const ratio=invoiceTotal?ncAbs/invoiceTotal:0;
+      if(ratio>0.15)score-=18;else if(ratio>0.08)score-=8;
+      if(nc.length>=5)score-=12;else if(nc.length>=3)score-=6;
+      score=Math.max(0,Math.min(100,Math.round(score)));
+      const level=score>=75?'BAJO':score>=55?'MEDIO':'ALTO';
+      const alerts=[];
+      if(!client.rut)alerts.push('RUT no informado o no vinculado.');
+      if(!client.direccion)alerts.push('Falta dirección de despacho/contacto.');
+      if(!client.telefono&&!client.email)alerts.push('Falta contacto telefónico o correo.');
+      if(!invs.length)alerts.push('Sin historial de facturas suficiente.');
+      else if(!recent180)alerts.push('Sin compras en los últimos 180 días.');
+      if(ratio>0.08)alerts.push(`Notas de crédito/débito: ${(ratio*100).toFixed(1)}% del total histórico.`);
+      if(nc.length>=3)alerts.push(`${nc.length} notas de crédito/débito registradas.`);
+      return {score,level,alerts,invoices:invs.length,recent90,recent180,ncCount:nc.length,ncRatio:ratio,advice:level==='BAJO'?'Crédito favorable según los datos disponibles.':level==='MEDIO'?'Crédito posible con revisión y condiciones.':'Requiere revisión antes de liberar crédito.'};
+    };
+
     post('Finalizando índices locales', 96);
+    documents.splice(0, documents.length, ...latestFirst(documents));
+    guides.splice(0, guides.length, ...latestFirst(guides));
+    nc.splice(0, nc.length, ...latestFirst(nc));
+    const clients = [...clientsMap.values()].map(c=>{
+      const ck=norm(c.rut)||normName(c.nombre); const m=contactMap.get(ck)||{};
+      const client={...c,direccion:m.direccion||'',comuna:m.comuna||'',region:m.region||'',contacto:m.contacto||'',telefono:m.telefono||'',email:m.email||''};
+      const invs=invoices.filter(inv=>(client.rut && norm(inv.rut)===norm(client.rut)) || (!client.rut && normName(inv.cliente)===normName(client.nombre)));
+      client.latestPurchase=invs.length?invs[0].fecha:'';
+      client.invoiceCount=invs.length;
+      client.creditRisk=computeRisk(client,invs);
+      return client;
+    }).sort((a,b)=>{const da=dateISO(a.latestPurchase),db=dateISO(b.latestPurchase);return (db||'').localeCompare(da||'')||a.nombre.localeCompare(b.nombre,'es')});
     const snapshot = {
-      version: '18.0',
+      version: '21.0',
       fileName: e.data.fileName || 'Maestro Excel',
       lastLoaded: Date.now(),
       sheets,
       metrics: { ine, sacos: { ventasSacos, kgSacos, items: sacItems }, granel: { totalGranel, items: granelItems }, iva: iv },
       documents,
-      clients: [...clientsMap.values()].map(c=>({...c,zona:c.zona||'',destino:c.destino||''})).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es')),
+      clients,
       guides,
       nc,
       invoices,
       products,
-      meta: { documentCount: documents.length, invoiceCount: invoices.length, guideCount: guides.length, clientCount: clientsMap.size }
+      meta: { documentCount: documents.length, invoiceCount: invoices.length, guideCount: guides.length, clientCount: clients.length }
     };
     self.postMessage({ type: 'result', snapshot });
   } catch (err) {
