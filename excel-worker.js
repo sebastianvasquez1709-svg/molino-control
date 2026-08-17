@@ -144,6 +144,7 @@ self.onmessage = async (e) => {
     const baseRows = rowsPart('BASE DE DATOS');
     const baseObjects = objects(baseRows, ['CODIGO', 'ITEM', 'FOLIO', 'ORIGEN/DESTINO'], 120000);
     const baseInvoiceLines = [];
+    const baseBoletaLines = [];
     const productSet = new Set();
     for (const o of baseObjects) {
       const item = get(o, ['ÍTEM', 'ITEM']);
@@ -156,28 +157,30 @@ self.onmessage = async (e) => {
       const tipo = get(o, ['TIPO', 'AO', 'FT/BT']) || docType;
       const folio = String(get(o, ['FOLIO FINAL', 'FOLIO', 'NRO DOCTO']) || '').trim();
       const client = get(o, ['ORIGEN/DESTINO', 'NOMBRE CLIENTE', 'CLIENTE']);
-      const isInvoice = /FACTURA\s*\[FT\]|FACTURA|FT\b/i.test(String(tipo || '') + ' ' + String(docType || ''));
-      if (isInvoice && folio) {
-        baseInvoiceLines.push({
-          fuente: sheetPart('BASE DE DATOS') || 'BASE DE DATOS',
-          fecha: get(o, ['FECHA DOCTO', 'FECHA']),
-          folio,
-          tipo: tipo || 'Factura[FT]',
-          cliente: client,
-          producto: product,
-          detalle: detail,
-          unidad: get(o, ['UM']),
-          kg: n(get(o, ['SALIDA'])),
-          sacos: n(get(o, ['VENTAS * SACOS'])),
-          neto: n(get(o, ['NETO', 'AR'])),
-          iva: n(get(o, ['IVA', 'AS'])),
-          ivaHarina: n(get(o, ['IVA HARINAS', 'AT'])),
-          total: n(get(o, ['BRUTO', 'AU'])),
-          estado: get(o, ['ESTADO']),
-          planta: get(o, ['PLANTA']),
-          s_g: get(o, ['S/G']),
-        });
-      }
+      const docText = String(tipo || '') + ' ' + String(docType || '');
+      const isInvoice = /FACTURA\s*\[FT\]|FACTURA|FT\b/i.test(docText);
+      const isBoleta = /BOLETA|\bBT\b/i.test(docText);
+      const line = {
+        fuente: sheetPart('BASE DE DATOS') || 'BASE DE DATOS',
+        fecha: get(o, ['FECHA DOCTO', 'FECHA']),
+        folio,
+        tipo: tipo || (isBoleta ? 'BOLETA' : 'Factura[FT]'),
+        cliente: client,
+        producto: product,
+        detalle: detail,
+        unidad: get(o, ['UM']),
+        kg: n(get(o, ['SALIDA'])),
+        sacos: n(get(o, ['VENTAS * SACOS'])),
+        neto: n(get(o, ['NETO', 'AR'])),
+        iva: n(get(o, ['IVA', 'AS'])),
+        ivaHarina: n(get(o, ['IVA HARINAS', 'AT'])),
+        total: n(get(o, ['BRUTO', 'AU'])),
+        estado: get(o, ['ESTADO']),
+        planta: get(o, ['PLANTA']),
+        s_g: get(o, ['S/G']),
+      };
+      if (isInvoice && folio) baseInvoiceLines.push(line);
+      if (isBoleta && folio) baseBoletaLines.push(line);
     }
 
     // ---------- DOCUMENTOS + CLIENTES ----------
@@ -232,7 +235,15 @@ self.onmessage = async (e) => {
     // Busca información de contacto si alguna hoja la contiene. Si no existe en el Excel,
     // el módulo Clientes permite registrarla manualmente y queda disponible para Despachos.
     const contactMap = new Map();
+    const destinationMap = new Map();
     const allSheetsForContacts = sheets;
+    const addDestination = (key, value) => {
+      const v = String(value ?? '').trim();
+      if (!key || !v || v.length < 3) return;
+      const list = destinationMap.get(key) || [];
+      if (!list.some(x => normName(x) === normName(v))) list.push(v);
+      destinationMap.set(key, list);
+    };
     const contactObjects = (rows, max=15000) => objects(rows, ['NOMBRE CLIENTE','CLIENTE','NOMBRE RECEPTOR','RECEPTOR','ORIGEN/DESTINO','DIRECCION','DIRECCIÓN','DOMICILIO','COMUNA','TELEFONO','TELÉFONO','CONTACTO'], max);
     const hasContactHeaders = rows => { const txt=(rows.slice(0,35).map(r=>(r||[]).map(v=>String(v??'').toUpperCase()).join(' | ')).join(' || ')); return /(DIRECC|DOMICIL|COMUNA|TELEF|FONO|CONTACTO|CIUDAD|REGION|REGIÓN)/.test(txt) && /(CLIENTE|RECEPTOR|ORIGEN\/DESTINO|RAZON SOCIAL)/.test(txt); };
     for (const sh of allSheetsForContacts) {
@@ -244,12 +255,15 @@ self.onmessage = async (e) => {
         const rut = get(o,['R.U.T. CLIENTE','RUT RECEPTOR','RUT','RUT CLIENTE']);
         const key = norm(rut) || normName(nombre);
         if (!key) continue;
-        const direccion = get(o,['DIRECCIÓN','DIRECCION','DOMICILIO','ADDRESS','CALLE']);
+        const direccion = get(o,['DIRECCIÓN DE DESPACHO','DIRECCION DE DESPACHO','DIRECCIÓN ENTREGA','DIRECCION ENTREGA','DESTINO','DIRECCIÓN','DIRECCION','DOMICILIO','ADDRESS','CALLE']);
         const comuna = get(o,['COMUNA','CIUDAD','LOCALIDAD']);
+        const destinoExcel = get(o,['DESTINO','DIRECCIÓN DE DESPACHO','DIRECCION DE DESPACHO','DIRECCIÓN ENTREGA','DIRECCION ENTREGA']);
         const region = get(o,['REGIÓN','REGION']);
         const contacto = get(o,['CONTACTO','NOMBRE CONTACTO']);
         const telefono = get(o,['TELÉFONO','TELEFONO','FONO','CELULAR']);
         const email = get(o,['EMAIL','CORREO']);
+        if (destinoExcel) addDestination(key, destinoExcel);
+        if (direccion) addDestination(key, direccion);
         if (direccion || comuna || region || contacto || telefono || email) {
           const prev = contactMap.get(key) || {};
           contactMap.set(key,{direccion:direccion||prev.direccion||'',comuna:comuna||prev.comuna||'',region:region||prev.region||'',contacto:contacto||prev.contacto||'',telefono:telefono||prev.telefono||'',email:email||prev.email||''});
@@ -298,6 +312,36 @@ self.onmessage = async (e) => {
       }
     }
     const invoices = [...invoiceMap.values()].map(x => ({ ...x, rut: x.rut || nameToRut.get(normName(x.cliente)) || '', cliente: x.cliente || rutToName.get(norm(x.rut)) || '', productos: [...x.productos].filter(Boolean), items:x.items||[] })).sort((a,b)=>{const da=dateISO(a.fecha),db=dateISO(b.fecha);return (db||'').localeCompare(da||'')||String(b.folio).localeCompare(String(a.folio),'es',{numeric:true})});
+
+    // ---------- BOLETAS AGRUPADAS CON DETALLE ----------
+    // Prioriza BASE DE DATOS para el detalle de productos/cantidades. LIBRO se usa
+    // como respaldo cuando una boleta no tiene líneas detalladas en BASE DE DATOS.
+    const boletaMap = new Map();
+    const addBoletaLine = line => {
+      const folio = String(line.folio || '').trim();
+      if (!folio) return;
+      const key = norm(folio);
+      if (!boletaMap.has(key)) boletaMap.set(key, { folio, fecha: line.fecha || '', cliente: line.cliente || '', rut: line.rut || '', items: [], lineas: 0, kg: 0, sacos: 0, neto: 0, iva: 0, total: 0, fuente: line.fuente || 'BASE DE DATOS', estado: line.estado || '' });
+      const b = boletaMap.get(key);
+      if (line.producto || line.detalle || line.kg || line.sacos) b.items.push({ producto: line.producto || '', detalle: line.detalle || '', unidad: line.unidad || '', kg: n(line.kg), sacos: n(line.sacos), cantidad: n(line.sacos) || n(line.kg) });
+      b.lineas += 1; b.kg += n(line.kg); b.sacos += n(line.sacos); b.neto += n(line.neto); b.iva += n(line.iva); b.total += n(line.total);
+      if (!b.cliente && line.cliente) b.cliente = line.cliente;
+      if (!b.rut && line.rut) b.rut = line.rut;
+      if (!b.fecha && line.fecha) b.fecha = line.fecha;
+    };
+    for (const line of baseBoletaLines) {
+      const ref = libroByFolio.get(norm(line.folio));
+      if (ref) { line.rut = line.rut || ref.rut; line.cliente = line.cliente || ref.cliente; if (!line.fecha) line.fecha = ref.fecha; }
+      if (!line.rut && line.cliente) line.rut = nameToRut.get(normName(line.cliente)) || '';
+      if (!line.cliente && line.rut) line.cliente = rutToName.get(norm(line.rut)) || '';
+      addBoletaLine(line);
+    }
+    for (const d of documents) {
+      if (!/BOLETA|\bBT\b/i.test(String(d.tipo || ''))) continue;
+      const key = norm(d.folio);
+      if (!boletaMap.has(key)) addBoletaLine(d);
+    }
+    const boletas = [...boletaMap.values()].map(b => ({...b, items: b.items.filter(x => x.producto || x.detalle || x.kg || x.sacos)})).sort((a,b) => { const da=dateISO(a.fecha), db=dateISO(b.fecha); return (db||'').localeCompare(da||'') || String(b.folio).localeCompare(String(a.folio),'es',{numeric:true}); });
 
     // Products: source real names plus manual fallbacks used by the operation.
     ['HARINA GRANEL','HARINA 25 KG','HARINA 10 KG','HARINILLA','GRITZ SEMOL','H.F. MAIZ','ZOOTECNICA','GERMEN','SEMOLINA','GRITZ MEDI','SALVADO','OSN'].forEach(x=>productSet.add(x));
@@ -359,7 +403,9 @@ self.onmessage = async (e) => {
     nc.splice(0, nc.length, ...latestFirst(nc));
     const clients = [...clientsMap.values()].map(c=>{
       const ck=norm(c.rut)||normName(c.nombre); const m=contactMap.get(ck)||{};
-      const client={...c,direccion:m.direccion||'',comuna:m.comuna||'',region:m.region||'',contacto:m.contacto||'',telefono:m.telefono||'',email:m.email||''};
+      const client={...c,direccion:m.direccion||'',comuna:m.comuna||'',region:m.region||'',contacto:m.contacto||'',telefono:m.telefono||'',email:m.email||'',destinos:[...(destinationMap.get(ck)||[])]};
+      const fallbackDestination=[client.direccion,client.comuna,client.region].filter(Boolean).join(', ');
+      if (fallbackDestination && !client.destinos.some(x=>normName(x)===normName(fallbackDestination))) client.destinos.push(fallbackDestination);
       const invs=invoices.filter(inv=>(client.rut && norm(inv.rut)===norm(client.rut)) || (!client.rut && normName(inv.cliente)===normName(client.nombre)));
       client.latestPurchase=invs.length?invs[0].fecha:'';
       client.invoiceCount=invs.length;
@@ -367,7 +413,7 @@ self.onmessage = async (e) => {
       return client;
     }).sort((a,b)=>{const da=dateISO(a.latestPurchase),db=dateISO(b.latestPurchase);return (db||'').localeCompare(da||'')||a.nombre.localeCompare(b.nombre,'es')});
     const snapshot = {
-      version: '23.0',
+      version: '29.0',
       fileName: e.data.fileName || 'Maestro Excel',
       lastLoaded: Date.now(),
       sheets,
@@ -377,8 +423,10 @@ self.onmessage = async (e) => {
       guides,
       nc,
       invoices,
+      boletas,
       products,
-      meta: { documentCount: documents.length, invoiceCount: invoices.length, guideCount: guides.length, clientCount: clients.length }
+      destinations: [...new Set(clients.flatMap(c=>c.destinos||[]))].sort((a,b)=>a.localeCompare(b,'es')),
+      meta: { documentCount: documents.length, invoiceCount: invoices.length, boletaCount: boletas.length, guideCount: guides.length, clientCount: clients.length }
     };
     self.postMessage({ type: 'result', snapshot });
   } catch (err) {
