@@ -1,4 +1,4 @@
-// V45: lector XLSX autocontenido. No depende de CDN ni de una librería externa.
+// V45.3: lector XLSX autocontenido. No depende de CDN ni de una librería externa.
 // Esto permite procesar el Registro de Existencia incluso con conectividad limitada.
 const td=new TextDecoder('utf-8');
 const u16=(dv,o)=>dv.getUint16(o,true),u32=(dv,o)=>dv.getUint32(o,true);
@@ -15,9 +15,18 @@ async function unzipEntries(buf){
 function attr(tag,name){const re=new RegExp(name+'=\"([^\"]*)\"','i'),m=String(tag).match(re);return m?xmlText(m[1]):''}
 function textBetween(xml,tag){const re=new RegExp('<'+tag+'[^>]*>([\\s\\S]*?)</'+tag+'>','gi'),a=[];let m;while((m=re.exec(xml)))a.push(xmlText(m[1].replace(/<[^>]+>/g,'')));return a.join('')}
 function parseShared(xml){const a=[];for(const si of String(xml||'').match(/<si(?:\s[^>]*)?>[\s\S]*?<\/si>/gi)||[])a.push(textBetween(si,'t'));return a}
-function parseSheet(xml,shared){const rows=[];for(const rm of String(xml||'').match(/<row(?:\s[^>]*)?>[\s\S]*?<\/row>/gi)||[]){const cells=[];for(const cm of rm.match(/<c(?:\s[^>]*)?>[\s\S]*?<\/c>|<c(?:\s[^>]*)?\/>/gi)||[]){const ref=attr(cm,'r'),idx=colIndex(ref),type=attr(cm,'t'),v=textBetween(cm,'v'),is=textBetween(cm,'t');let value=null;if(type==='s')value=shared[Number(v)]??'';else if(type==='inlineStr')value=is;else if(type==='b')value=v==='1';else if(type==='str')value=v;else if(v!==''){const num=Number(v);value=Number.isFinite(num)?num:v}if(idx>=0)cells[idx]=value}rows.push(cells)}return rows}
+function parseSheet(xml,shared,keepIndexes=null){const rows=[];const keep=keepIndexes instanceof Set?keepIndexes:null;for(const rm of String(xml||'').match(/<row(?:\s[^>]*)?>[\s\S]*?<\/row>/gi)||[]){const cells=[];for(const cm of rm.match(/<c(?:\s[^>]*)?>[\s\S]*?<\/c>|<c(?:\s[^>]*)?\/>/gi)||[]){const ref=attr(cm,'r'),idx=colIndex(ref);if(idx<0||(keep&& !keep.has(idx)))continue;const type=attr(cm,'t'),v=textBetween(cm,'v'),is=textBetween(cm,'t');let value=null;if(type==='s')value=shared[Number(v)]??'';else if(type==='inlineStr')value=is;else if(type==='b')value=v==='1';else if(type==='str')value=v;else if(v!==''){const num=Number(v);value=Number.isFinite(num)?num:v}cells[idx]=value}rows.push(cells)}return rows}
 async function parseXlsx(buf){const z=await unzipEntries(buf),get=async name=>z.has(name)?td.decode(new Uint8Array(await z.get(name))):'';const wb=await get('xl/workbook.xml');const rel=await get('xl/_rels/workbook.xml.rels');const relMap={};for(const m of rel.match(/<Relationship\b[^>]*>/gi)||[]){const id=attr(m,'Id'),target=attr(m,'Target');if(id)relMap[id]=target}
-  const shared= z.has('xl/sharedStrings.xml')?parseShared(await get('xl/sharedStrings.xml')):[];const sheets=[];for(const m of wb.match(/<sheet\b[^>]*>/gi)||[]){const name=attr(m,'name'),rid=attr(m,'r:id')||attr(m,'id');let target=relMap[rid]||'';target=target.replace(/^\.\//,'');if(!target.startsWith('xl/'))target='xl/'+target;const rows=target&&z.has(target)?parseSheet(await get(target),shared):[];sheets.push({name,rows})}return sheets}
+  const shared=z.has('xl/sharedStrings.xml')?parseShared(await get('xl/sharedStrings.xml')):[];
+  // El Maestro puede contener hojas de 50 MB o más. No es necesario cargar todas:
+  // Molino Control trabaja con estas hojas y conserva sus nombres para diagnóstico.
+  const targets=new Set(['BASE DE DATOS','INE  (2)','NESTLE SACOS','NESTLE Y CPW','LIBRO','GUIAS']);
+  const baseKeep=new Set([0,1,2,9,13,14,15,17,20,27,28,29,30,31,40,43,44,45,46,47,48,49,50]);
+  const sheets=[];
+  for(const m of wb.match(/<sheet\b[^>]*>/gi)||[]){const name=attr(m,'name'),rid=attr(m,'r:id')||attr(m,'id');let target=relMap[rid]||'';target=target.replace(/^\.\//,'');if(!target.startsWith('xl/'))target='xl/'+target;let rows=[];
+    if(target&&z.has(target)&&targets.has(name)){const xml=await get(target);rows=parseSheet(xml,shared,name==='BASE DE DATOS'?baseKeep:null);}
+    sheets.push({name,rows});}
+  return sheets}
 
 self.onmessage = async (e) => {
   try {
@@ -130,16 +139,41 @@ self.onmessage = async (e) => {
         return '';
       })();
     };
+    // ================================================================
+    // PROMEDIO — REGLA MAESTRA (extraída del Excel Maestro)
+    //
+    // El PivotTable de la hoja INE (2) usa el campo calculado:
+    //   VP X = NETO / Salida
+    // y la columna "Promedio" corresponde al resultado de esa fórmula
+    // sobre cada agrupación. Para una agrupación, Excel equivale esto a:
+    //   D = B / C
+    // Total general:
+    //   D15 = B15 / C15
+    // Harinas:
+    //   B18 = B7+B8+B9
+    //   B19 = C7+C8+C9
+    //   B20 = B18/B19
+    //
+    // IMPORTANTE: no se usa ningún promedio alternativo. Si el valor
+    // leído del Maestro no coincide con la fórmula del Maestro, se marca
+    // la inconsistencia para no presentar un dato inventado.
+    // ================================================================
     const calcIne = (items,periodo,quality={}) => {
       const ordered=INE_FAMILIES.map(name=>{
         const x=items.find(v=>canonicalFamily(v.name)===name || String(v.name||'').trim().toUpperCase()===name) || {name,neto:0,kg:0};
-        return {name,neto:n(x.neto),kg:n(x.kg)};
+        const neto=n(x.neto), kg=n(x.kg);
+        // Fórmula exacta del Maestro: VP X = NETO / Salida.
+        const promedio=kg?neto/kg:0;
+        return {name,neto,kg,promedio};
       });
       const totalNeto=ordered.reduce((a,x)=>a+x.neto,0), totalKg=ordered.reduce((a,x)=>a+x.kg,0);
       const netoHarinas=ordered.slice(0,3).reduce((a,x)=>a+x.neto,0), kgHarinas=ordered.slice(0,3).reduce((a,x)=>a+x.kg,0);
-      return {totalNeto,totalKg,totalPromedio:totalKg?totalNeto/totalKg:0,netoHarinas,kgHarinas,promedioHarinas:kgHarinas?netoHarinas/kgHarinas:0,
-        items:ordered.map(x=>({...x,promedio:x.kg?x.neto/x.kg:0,vn:totalNeto?x.neto/totalNeto:0,kgp:totalKg?x.kg/totalKg:0})),periodo,
-        quality:{...quality,masterFormulaProfile:{producto:'Pauta INE: 8 familias fijas',neto:'B = fuente neto',kg:'C = fuente kg',promedio:'D = B/C',vn:'E = B/B15',kgp:'F = C/C15',totalNeto:'B15 = SUM(B7:B14)',totalKg:'C15 = SUM(C7:C14)',totalPromedio:'D15 = B15/C15',netoHarinas:'B18 = B7+B8+B9',kgHarinas:'B19 = C7+C8+C9',promedioHarinas:'B20 = B18/B19'}}
+      // Fórmulas exactas del Maestro: D15=B15/C15 y B20=B18/B19.
+      const totalPromedio=totalKg?totalNeto/totalKg:0;
+      const promedioHarinas=kgHarinas?netoHarinas/kgHarinas:0;
+      return {totalNeto,totalKg,totalPromedio,netoHarinas,kgHarinas,promedioHarinas,
+        items:ordered.map(x=>({...x,vn:totalNeto?x.neto/totalNeto:0,kgp:totalKg?x.kg/totalKg:0})),periodo,
+        quality:{...quality,masterFormulaProfile:{producto:'Hoja INE (2) / Tabla dinámica2',neto:'B = Valor NETO',kg:'C = Cantidad kg / Salida',promedio:'D = VP X = NETO / Salida',vn:'E = B/B15',kgp:'F = C/C15',totalNeto:'B15 = SUM(B7:B14)',totalKg:'C15 = SUM(C7:C14)',totalPromedio:'D15 = B15/C15',netoHarinas:'B18 = B7+B8+B9',kgHarinas:'B19 = C7+C8+C9',promedioHarinas:'B20 = B18/B19'}}
       };
     };
 
@@ -162,12 +196,64 @@ self.onmessage = async (e) => {
         const latest=monthRows.slice().sort((a,b)=>(Number(b.year)-Number(a.year))||((monthsOrder[b.month]||0)-(monthsOrder[a.month]||0)))[0];
         const targetYear=latest.year,targetMonth=latest.month, grouped=new Map();
         for(const x of monthRows){if(x.year!==targetYear||x.month!==targetMonth)continue;const r=x.r,name=String(r[bidx['PRODUCTO']]??'').trim();if(!name)continue;const net=n(r[bidx['NETO']]),kg=n(r[bidx['SALIDA']]);if(!net&&!kg)continue;const key=canonicalFamily(name)||name.toUpperCase();const z=grouped.get(key)||{name:canonicalFamily(name)||name,neto:0,kg:0};z.neto+=net;z.kg+=kg;grouped.set(key,z)}
-        const exact=calcIne([...grouped.values()],`${targetMonth} ${targetYear}`,{mode:'INE EXACTO DESDE MAESTRO',sourceType:'ventas-maestro',headerFound:true,missing:[],sourceSheet:'BASE DE DATOS',calculation:'INE del Maestro: B = Σ NETO (BASE DE DATOS); C = Σ SALIDA (BASE DE DATOS); D = B/C; E = B/B15; F = C/C15; B18 = B7+B8+B9; B19 = C7+C8+C9; B20 = B18/B19.'});
-        Object.assign(ine,exact); ineSource='BASE DE DATOS'; ine.quality.masterFormulaProfile={producto:'AB = PRODUCTO',mes:'AE = MES',anio:'AY = AÑO',neto:'B = Σ NETO (AR)',kg:'C = Σ SALIDA (U)',promedio:'D = B/C',vn:'E = B/B15',kgp:'F = C/C15',totalNeto:'B15 = SUM(B7:B14)',totalKg:'C15 = SUM(C7:C14)',totalPromedio:'D15 = B15/C15',netoHarinas:'B18 = B7+B8+B9',kgHarinas:'B19 = C7+C8+C9',promedioHarinas:'B20 = B18/B19'};
-        // Validación contra la hoja INE (2), sin usarla como fuente maestra.
+        // PATCH INE V45.4 — CAMBIO QUIRÚRGICO SOLO EN INE
+        // Si Tabla dinámica2 está completa, los valores B:C:D:E:F son la fuente
+        // de verdad. PROMEDIO (D) se COPIA del Excel y no se sustituye.
+        const exact=calcIne([...grouped.values()],`${targetMonth} ${targetYear}`,{
+          mode:'INE EXACTO SEGÚN FÓRMULA DEL MAESTRO',sourceType:'ventas-maestro',headerFound:true,missing:[],
+          sourceSheet:'BASE DE DATOS',
+          calculation:'Respaldo exacto: VP X = NETO/Salida; D = B/C; D15 = B15/C15; B20 = B18/B19.'
+        });
+        Object.assign(ine,exact); let ineSource='BASE DE DATOS';
         if(ir.length){
           const rh=ir.findIndex(r=>String(r?.[0]||'').toUpperCase().includes('ETIQUETAS DE FILA'));
-          if(rh>=0){const ref={};for(let i=rh+1;i<ir.length;i++){const name=canonicalFamily(ir[i]?.[0]);if(!name)continue;ref[name]={neto:n(ir[i]?.[1]),kg:n(ir[i]?.[2])}}const diffs=[];for(const x of ine.items){const r=ref[x.name];if(!r)continue;if(Math.abs(x.neto-r.neto)>0.01||Math.abs(x.kg-r.kg)>0.01)diffs.push({name:x.name,neto:x.neto-r.neto,kg:x.kg-r.kg})}ine.quality.referenceSheet=ineSourceSheet||'INE (2)';ine.quality.referenceCheck={ok:diffs.length===0,differences:diffs};}
+          if(rh>=0){
+            const ref={}; let masterTotal=null, masterTotalNeto=null, masterTotalKg=null;
+            let masterHarinas=null, masterHarinasNeto=null, masterHarinasKg=null;
+            for(let i=rh+1;i<ir.length;i++){
+              const raw=String(ir[i]?.[0]??'').trim(), label=raw.toUpperCase();
+              if(/^TOTAL GENERAL$/i.test(raw)){
+                masterTotalNeto=n(ir[i]?.[1]); masterTotalKg=n(ir[i]?.[2]); masterTotal=n(ir[i]?.[3]);
+                continue;
+              }
+              const name=canonicalFamily(raw);
+              if(name) ref[name]={neto:n(ir[i]?.[1]),kg:n(ir[i]?.[2]),promedio:n(ir[i]?.[3]),vn:n(ir[i]?.[4]),kgp:n(ir[i]?.[5])};
+              if(label.includes('NETO HARINAS')) masterHarinasNeto=n(ir[i]?.[1]);
+              if(label.includes('KG HARINAS')) masterHarinasKg=n(ir[i]?.[1]);
+              if(label.includes('VALOR PROMEDIO HARINAS')) masterHarinas=n(ir[i]?.[1]);
+            }
+            const complete=INE_FAMILIES.every(name=>ref[name]) && masterTotal!=null;
+            const diffs=[];
+            if(complete){
+              for(const name of INE_FAMILIES){
+                const r=ref[name], expected=r.kg?r.neto/r.kg:0;
+                if(Math.abs(expected-r.promedio)>0.000000001) diffs.push({name,excel:r.promedio,formula:expected});
+              }
+              if(masterTotalNeto!=null && masterTotalKg){
+                const expected=masterTotalNeto/masterTotalKg;
+                if(Math.abs(expected-masterTotal)>0.000000001) diffs.push({name:'TOTAL GENERAL',excel:masterTotal,formula:expected});
+              }
+              if(masterHarinas!=null && masterHarinasNeto!=null && masterHarinasKg){
+                const expected=masterHarinasNeto/masterHarinasKg;
+                if(Math.abs(expected-masterHarinas)>0.000000001) diffs.push({name:'VALOR PROMEDIO HARINAS',excel:masterHarinas,formula:expected});
+              }
+              // COPIA DIRECTA: Excel manda; la validación nunca sobrescribe.
+              ine.items=INE_FAMILIES.map(name=>({...ref[name],name}));
+              ine.totalNeto=masterTotalNeto; ine.totalKg=masterTotalKg; ine.totalPromedio=masterTotal;
+              ine.netoHarinas=masterHarinasNeto; ine.kgHarinas=masterHarinasKg; ine.promedioHarinas=masterHarinas;
+              ine.quality.sourceSheet=ineSourceSheet||'INE (2)'; ineSource=ineSourceSheet||'INE (2)';
+              ine.quality.sourceOfTruth='INE (2) / Tabla dinámica2 — valores copiados directamente del Excel Maestro';
+              ine.quality.referenceCheck={ok:diffs.length===0,differences:diffs};
+              ine.quality.calculation='PROMEDIO COPIADO DIRECTAMENTE DEL EXCEL MAESTRO. La fórmula solo valida; nunca sustituye D.';
+              ine.quality.masterFormulaProfile={...ine.quality.masterFormulaProfile,source:'INE (2) / Tabla dinámica2',promedio:'D = valor almacenado por Excel (VP X); NO recalcular',vn:'E = valor almacenado por Excel',kgp:'F = valor almacenado por Excel',totalPromedio:'D15 = valor almacenado por Excel',promedioHarinas:'B20 = valor almacenado por Excel'};
+              if(diffs.length) ine.quality.missing=[`ADVERTENCIA INE: ${diffs.length} valor(es) de Excel no coinciden exactamente con VP X. Se conserva el valor de Excel.`];
+            }
+            else {
+              // No romper la app si cambia la estructura: conservar el respaldo exacto de V45.3.
+              ine.quality.referenceCheck={ok:false,differences:[]};
+              ine.quality.missing=[...(ine.quality.missing||[]),'ADVERTENCIA INE: Tabla dinámica2 incompleta; se conservó el respaldo exacto del Maestro.'];
+            }
+          }
         }
       }
     } else {
