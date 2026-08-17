@@ -57,11 +57,17 @@ self.onmessage = async (e) => {
 
     post('Leyendo estructura del Maestro', 8);
 
-    // ---------- INE ----------
-    const ir = rowsPart('INE');
-    const ine = { totalNeto: 0, totalKg: 0, totalPromedio: 0, netoHarinas: 0, kgHarinas: 0, promedioHarinas: 0, items: [], periodo: '' };
+    // ---------- INE / REGISTRO DE EXISTENCIA ----------
+    // El Maestro puede traer una hoja INE (pivot de ventas) o un Excel mensual
+    // independiente con el formato REGISTRO DE EXISTENCIAS [FISICO - VALORIZADO].
+    // Si no existe la hoja INE, usamos automáticamente el Registro de Existencia
+    // para que el Panel Privado nunca quede en $0 por no encontrar una hoja llamada INE.
+    let ir = rowsPart('INE');
+    let ineSource = sheetPart('INE') || '';
+    const ine = { totalNeto: 0, totalKg: 0, totalPromedio: 0, netoHarinas: 0, kgHarinas: 0, promedioHarinas: 0, items: [], periodo: '', quality: { mode:'', sourceType:'', headerFound:false, missing:[] }, inventory: { saldoAnterior:0, saldoAnterior$:0, entradaKg:0, salidaKg:0, entrada$:0, salida$:0, disponibleKg:0, disponible$:0, reservasKg:0, consignacionKg:0, transitoriaKg:0, totalValorizado$:0 } };
     const rh = ir.findIndex(r => String(r?.[0] || '').toUpperCase().includes('ETIQUETAS DE FILA'));
     if (rh >= 0) {
+      ine.quality={mode:'INE/Pivot',sourceType:'ventas',headerFound:true,missing:[]};
       ine.periodo = String(ir[2]?.[1] || '') + ' ' + String(ir[3]?.[1] || '');
       for (let i = rh + 1; i < ir.length; i++) {
         const name = String(ir[i]?.[0] ?? '').trim();
@@ -70,12 +76,34 @@ self.onmessage = async (e) => {
         if (/TOTAL GENERAL/i.test(name)) { ine.totalNeto = net; ine.totalKg = kg; ine.totalPromedio = avg; continue; }
         if (net || kg) ine.items.push({ name, neto: net, kg, promedio: avg, vn: n(ir[i]?.[4]), kgp: n(ir[i]?.[5]) });
       }
-    }
-    for (const r of ir) {
-      const label = String(r?.[0] ?? '').toUpperCase();
-      if (label === 'NETO HARINAS') ine.netoHarinas = n(r?.[1]);
-      if (label.includes('KG HARINAS')) ine.kgHarinas = n(r?.[1]);
-      if (label.includes('VALOR PROMEDIO HARINAS')) ine.promedioHarinas = n(r?.[1]);
+      for (const r of ir) {
+        const label = String(r?.[0] ?? '').toUpperCase();
+        if (label === 'NETO HARINAS') ine.netoHarinas = n(r?.[1]);
+        if (label.includes('KG HARINAS')) ine.kgHarinas = n(r?.[1]);
+        if (label.includes('VALOR PROMEDIO HARINAS')) ine.promedioHarinas = n(r?.[1]);
+      }
+    } else {
+      const regName = sheets.find(name => rowsOf(name).slice(0,7).flat().some(v => /REGISTRO DE EXISTENCIAS/i.test(String(v ?? ''))));
+      if (regName) {
+        ir = rowsOf(regName); ineSource = regName;
+        const flat = ir.flat().map(v => String(v ?? '').trim());
+        const range = flat.find(v => /Rango de fechas/i.test(v));
+        const emission = flat.find(v => /Fecha de emisión/i.test(v));
+        const rm = range?.match(/Rango de fechas\s*:\s*(\d{1,2}\/\d{1,2}\/\d{4})\s+al\s+(\d{1,2}\/\d{1,2}\/\d{4})/i);
+        if (rm) ine.periodo = rm[1].split('/')[2]+'-'+rm[1].split('/')[1].padStart(2,'0');
+        const header = ir.findIndex(r => { const u=(r||[]).map(v=>String(v??'').trim().toUpperCase()); return u.includes('INFO') && u.includes('ÍTEM') && u.includes('TOTAL DISPONIBLE') && u.includes('TOTAL DISPONIBLE$'); });
+        if (header >= 0) {
+          const h=(ir[header]||[]).map(v=>String(v??'').trim().toUpperCase()); const idx={}; h.forEach((v,i)=>{if(v)idx[v]=i});
+          ine.quality={mode:'Registro de Existencia',sourceType:'existencia',headerFound:true,missing:[],range:range||'',emissionDate:emission?.replace(/^.*?:\s*/,'')||''};
+          const summary=[],detail=[];
+          for(let i=header+1;i<ir.length;i++){const r=ir[i]||[];const info=String(r[idx['INFO']]??'').trim();const name=String(r[idx['ÍTEM']]??'').trim();if(!name)continue;const x={name,code:String(r[idx['CÓDIGO']]??''),disponible:n(r[idx['TOTAL DISPONIBLE']]),disponible$:n(r[idx['TOTAL DISPONIBLE$']]),saldoAnterior:n(r[idx['SALDO ANTERIOR']]),saldoAnterior$:n(r[idx['SALDO ANTERIOR$']]),entrada:n(r[idx['ENTRADA']]),salida:n(r[idx['SALIDA']]),entrada$:n(r[idx['ENTRADA$']]),salida$:n(r[idx['SALIDA$']]),reservas:n(r[idx['RESERVAS']]),consignacion:n(r[idx['CONSIGNACIÓN']]),transitoria:n(r[idx['TRANSITORIA']]),totalValorizado$:n(r[idx['TOTAL VALORIZADO$']])};if(info==='2')summary.push(x);else if(info==='1')detail.push(x);}
+          ine.items=summary.map(x=>({name:x.name,code:x.code,neto:x.disponible$,kg:x.disponible,promedio:x.disponible?x.disponible$/x.disponible:0,vn:0,kgp:0})).filter(x=>x.neto||x.kg);
+          ine.totalKg=ine.items.reduce((a,x)=>a+x.kg,0); ine.totalNeto=ine.items.reduce((a,x)=>a+x.neto,0); ine.totalPromedio=ine.totalKg?ine.totalNeto/ine.totalKg:0;
+          const har=ine.items.filter(x=>/^HARINA\b/i.test(x.name)); ine.netoHarinas=har.reduce((a,x)=>a+x.neto,0); ine.kgHarinas=har.reduce((a,x)=>a+x.kg,0); ine.promedioHarinas=ine.kgHarinas?ine.netoHarinas/ine.kgHarinas:0;
+          ine.items=ine.items.map(x=>({...x,vn:ine.totalNeto?x.neto/ine.totalNeto:0,kgp:ine.totalKg?x.kg/ine.totalKg:0}));
+          ine.inventory.saldoAnterior=summary.reduce((a,x)=>a+x.saldoAnterior,0); ine.inventory.saldoAnterior$=summary.reduce((a,x)=>a+x.saldoAnterior$,0); ine.inventory.entradaKg=detail.reduce((a,x)=>a+x.entrada,0); ine.inventory.salidaKg=detail.reduce((a,x)=>a+x.salida,0); ine.inventory.entrada$=detail.reduce((a,x)=>a+x.entrada$,0); ine.inventory.salida$=detail.reduce((a,x)=>a+x.salida$,0); ine.inventory.disponibleKg=ine.totalKg; ine.inventory.disponible$=ine.totalNeto; ine.inventory.reservasKg=summary.reduce((a,x)=>a+x.reservas,0); ine.inventory.consignacionKg=summary.reduce((a,x)=>a+x.consignacion,0); ine.inventory.transitoriaKg=summary.reduce((a,x)=>a+x.transitoria,0); ine.inventory.totalValorizado$=summary.reduce((a,x)=>a+x.totalValorizado$,0);
+        } else { ine.quality={mode:'',sourceType:'',headerFound:false,missing:['Se encontró un archivo, pero no se reconoció la tabla de Registro de Existencia.']}; }
+      } else { ine.quality={mode:'',sourceType:'',headerFound:false,missing:['No se encontró una hoja INE ni un Registro de Existencia.']}; }
     }
 
     // ---------- SACOS ----------
@@ -413,7 +441,7 @@ self.onmessage = async (e) => {
       return client;
     }).sort((a,b)=>{const da=dateISO(a.latestPurchase),db=dateISO(b.latestPurchase);return (db||'').localeCompare(da||'')||a.nombre.localeCompare(b.nombre,'es')});
     const snapshot = {
-      version: '29.0',
+      version: '40.0',
       fileName: e.data.fileName || 'Maestro Excel',
       lastLoaded: Date.now(),
       sheets,
