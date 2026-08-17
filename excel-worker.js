@@ -1,13 +1,33 @@
-importScripts('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+// V42: lector XLSX autocontenido. No depende de CDN ni de una librería externa.
+// Esto permite procesar el Registro de Existencia incluso con conectividad limitada.
+const td=new TextDecoder('utf-8');
+const u16=(dv,o)=>dv.getUint16(o,true),u32=(dv,o)=>dv.getUint32(o,true);
+const xmlText=s=>String(s??'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'\"').replace(/&apos;/g,"'");
+function colIndex(ref){let m=String(ref||'').match(/^([A-Z]+)\d+$/i);if(!m)return 0;let n=0;for(const c of m[1].toUpperCase())n=n*26+c.charCodeAt(0)-64;return n-1}
+async function unzipEntries(buf){
+  const dv=new DataView(buf), bytes=new Uint8Array(buf);let eocd=-1;
+  for(let i=bytes.length-22;i>=Math.max(0,bytes.length-65558);i--){if(u32(dv,i)===0x06054b50){eocd=i;break}}
+  if(eocd<0)throw new Error('El archivo no es un XLSX ZIP válido.');
+  const count=u16(dv,eocd+10),cdSize=u32(dv,eocd+12),cdOff=u32(dv,eocd+16),out=new Map();let p=cdOff;
+  for(let i=0;i<count;i++){if(u32(dv,p)!==0x02014b50)break;const method=u16(dv,p+10),cs=u32(dv,p+20),nameLen=u16(dv,p+28),extraLen=u16(dv,p+30),commentLen=u16(dv,p+32),local=u32(dv,p+42);const name=td.decode(bytes.slice(p+46,p+46+nameLen));const ld=u16(dv,local+26),le=u16(dv,local+28),start=local+30+ld+le;const raw=bytes.slice(start,start+cs);let data;if(method===0)data=raw.buffer.slice(raw.byteOffset,raw.byteOffset+raw.byteLength);else if(method===8){const ds=new DecompressionStream('deflate-raw');data=await new Response(new Blob([raw]).stream().pipeThrough(ds)).arrayBuffer()}else throw new Error('Compresión XLSX no soportada: '+method);out.set(name,data);p+=46+nameLen+extraLen+commentLen}
+  return out;
+}
+function attr(tag,name){const re=new RegExp(name+'=\"([^\"]*)\"','i'),m=String(tag).match(re);return m?xmlText(m[1]):''}
+function textBetween(xml,tag){const re=new RegExp('<'+tag+'[^>]*>([\\s\\S]*?)</'+tag+'>','gi'),a=[];let m;while((m=re.exec(xml)))a.push(xmlText(m[1].replace(/<[^>]+>/g,'')));return a.join('')}
+function parseShared(xml){const a=[];for(const si of String(xml||'').match(/<si(?:\s[^>]*)?>[\s\S]*?<\/si>/gi)||[])a.push(textBetween(si,'t'));return a}
+function parseSheet(xml,shared){const rows=[];for(const rm of String(xml||'').match(/<row(?:\s[^>]*)?>[\s\S]*?<\/row>/gi)||[]){const cells=[];for(const cm of rm.match(/<c(?:\s[^>]*)?>[\s\S]*?<\/c>|<c(?:\s[^>]*)?\/>/gi)||[]){const ref=attr(cm,'r'),idx=colIndex(ref),type=attr(cm,'t'),v=textBetween(cm,'v'),is=textBetween(cm,'t');let value=null;if(type==='s')value=shared[Number(v)]??'';else if(type==='inlineStr')value=is;else if(type==='b')value=v==='1';else if(type==='str')value=v;else if(v!==''){const num=Number(v);value=Number.isFinite(num)?num:v}if(idx>=0)cells[idx]=value}rows.push(cells)}return rows}
+async function parseXlsx(buf){const z=await unzipEntries(buf),get=async name=>z.has(name)?td.decode(new Uint8Array(await z.get(name))):'';const wb=await get('xl/workbook.xml');const rel=await get('xl/_rels/workbook.xml.rels');const relMap={};for(const m of rel.match(/<Relationship\b[^>]*>/gi)||[]){const id=attr(m,'Id'),target=attr(m,'Target');if(id)relMap[id]=target}
+  const shared= z.has('xl/sharedStrings.xml')?parseShared(await get('xl/sharedStrings.xml')):[];const sheets=[];for(const m of wb.match(/<sheet\b[^>]*>/gi)||[]){const name=attr(m,'name'),rid=attr(m,'r:id')||attr(m,'id');let target=relMap[rid]||'';target=target.replace(/^\.\//,'');if(!target.startsWith('xl/'))target='xl/'+target;const rows=target&&z.has(target)?parseSheet(await get(target),shared):[];sheets.push({name,rows})}return sheets}
 
 self.onmessage = async (e) => {
   try {
     if (e.data?.type !== 'parse') return;
-    const wb = XLSX.read(e.data.buffer, { type: 'array', cellDates: true, cellNF: false, cellStyles: false });
-    const sheets = wb.SheetNames || [];
+    const parsed = await parseXlsx(e.data.buffer);
+    const sheets = parsed.map(x=>x.name);
+    const sheetMap = new Map(parsed.map(x=>[x.name,x.rows]));
     const post = (message, percent) => self.postMessage({ type: 'progress', message, percent });
     const sheetPart = p => sheets.find(s => s.toUpperCase().includes(p.toUpperCase())) || null;
-    const rowsOf = name => name && wb.Sheets[name] ? XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: null, raw: true }) : [];
+    const rowsOf = name => name && sheetMap.has(name) ? sheetMap.get(name) : [];
     const rowsPart = p => rowsOf(sheetPart(p));
     const norm = v => String(v ?? '').toUpperCase().replace(/[.\-\s]/g, '');
     const normName = v => String(v ?? '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9]+/g,' ').trim().replace(/\s+/g,' ');
@@ -91,12 +111,28 @@ self.onmessage = async (e) => {
         const emission = flat.find(v => /Fecha de emisión/i.test(v));
         const rm = range?.match(/Rango de fechas\s*:\s*(\d{1,2}\/\d{1,2}\/\d{4})\s+al\s+(\d{1,2}\/\d{1,2}\/\d{4})/i);
         if (rm) ine.periodo = rm[1].split('/')[2]+'-'+rm[1].split('/')[1].padStart(2,'0');
-        const header = ir.findIndex(r => { const u=(r||[]).map(v=>String(v??'').trim().toUpperCase()); return u.includes('INFO') && u.includes('ÍTEM') && u.includes('TOTAL DISPONIBLE') && u.includes('TOTAL DISPONIBLE$'); });
+        const headerKey = v => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9$]+/g,'');
+        const header = ir.findIndex(r => { const u=(r||[]).map(headerKey); return u.includes('INFO') && u.includes('ITEM') && u.includes('TOTALDISPONIBLE') && u.some(x=>x.startsWith('TOTALVALORIZADO')); });
         if (header >= 0) {
-          const h=(ir[header]||[]).map(v=>String(v??'').trim().toUpperCase()); const idx={}; h.forEach((v,i)=>{if(v)idx[v]=i});
+          const h=(ir[header]||[]).map(headerKey); const idx={}; h.forEach((v,i)=>{if(v)idx[v]=i});
           ine.quality={mode:'Registro de Existencia',sourceType:'existencia',headerFound:true,missing:[],range:range||'',emissionDate:emission?.replace(/^.*?:\s*/,'')||''};
           const summary=[],detail=[];
-          for(let i=header+1;i<ir.length;i++){const r=ir[i]||[];const info=String(r[idx['INFO']]??'').trim();const name=String(r[idx['ÍTEM']]??'').trim();if(!name)continue;const x={name,code:String(r[idx['CÓDIGO']]??''),disponible:n(r[idx['TOTAL DISPONIBLE']]),disponible$:n(r[idx['TOTAL DISPONIBLE$']]),saldoAnterior:n(r[idx['SALDO ANTERIOR']]),saldoAnterior$:n(r[idx['SALDO ANTERIOR$']]),entrada:n(r[idx['ENTRADA']]),salida:n(r[idx['SALIDA']]),entrada$:n(r[idx['ENTRADA$']]),salida$:n(r[idx['SALIDA$']]),reservas:n(r[idx['RESERVAS']]),consignacion:n(r[idx['CONSIGNACIÓN']]),transitoria:n(r[idx['TRANSITORIA']]),totalValorizado$:n(r[idx['TOTAL VALORIZADO$']])};if(info==='2')summary.push(x);else if(info==='1')detail.push(x);}
+          for(let i=header+1;i<ir.length;i++){
+            const r=ir[i]||[];
+            const info=String(r[idx['INFO']]??'').trim();
+            const name=String(r[idx['ITEM']]??'').trim();
+            if(!name)continue;
+            const x={
+              name,code:String(r[idx['CODIGO']]??''),
+              disponible:n(r[idx['TOTALDISPONIBLE']]),disponible$:n(r[idx['TOTALDISPONIBLE$']]),
+              saldoAnterior:n(r[idx['SALDOANTERIOR']]),saldoAnterior$:n(r[idx['SALDOANTERIOR$']]),
+              entrada:n(r[idx['ENTRADA']]),salida:n(r[idx['SALIDA']]),
+              entrada$:n(r[idx['ENTRADA$']]),salida$:n(r[idx['SALIDA$']]),
+              reservas:n(r[idx['RESERVAS']]),consignacion:n(r[idx['CONSIGNACION']]),transitoria:n(r[idx['TRANSITORIA']]),
+              totalValorizado$:n(r[idx['TOTALVALORIZADO$']])
+            };
+            if(info==='2')summary.push(x);else if(info==='1')detail.push(x);
+          }
           ine.items=summary.map(x=>({name:x.name,code:x.code,neto:x.disponible$,kg:x.disponible,promedio:x.disponible?x.disponible$/x.disponible:0,vn:0,kgp:0})).filter(x=>x.neto||x.kg);
           ine.totalKg=ine.items.reduce((a,x)=>a+x.kg,0); ine.totalNeto=ine.items.reduce((a,x)=>a+x.neto,0); ine.totalPromedio=ine.totalKg?ine.totalNeto/ine.totalKg:0;
           const har=ine.items.filter(x=>/^HARINA\b/i.test(x.name)); ine.netoHarinas=har.reduce((a,x)=>a+x.neto,0); ine.kgHarinas=har.reduce((a,x)=>a+x.kg,0); ine.promedioHarinas=ine.kgHarinas?ine.netoHarinas/ine.kgHarinas:0;
@@ -104,6 +140,72 @@ self.onmessage = async (e) => {
           ine.inventory.saldoAnterior=summary.reduce((a,x)=>a+x.saldoAnterior,0); ine.inventory.saldoAnterior$=summary.reduce((a,x)=>a+x.saldoAnterior$,0); ine.inventory.entradaKg=detail.reduce((a,x)=>a+x.entrada,0); ine.inventory.salidaKg=detail.reduce((a,x)=>a+x.salida,0); ine.inventory.entrada$=detail.reduce((a,x)=>a+x.entrada$,0); ine.inventory.salida$=detail.reduce((a,x)=>a+x.salida$,0); ine.inventory.disponibleKg=ine.totalKg; ine.inventory.disponible$=ine.totalNeto; ine.inventory.reservasKg=summary.reduce((a,x)=>a+x.reservas,0); ine.inventory.consignacionKg=summary.reduce((a,x)=>a+x.consignacion,0); ine.inventory.transitoriaKg=summary.reduce((a,x)=>a+x.transitoria,0); ine.inventory.totalValorizado$=summary.reduce((a,x)=>a+x.totalValorizado$,0);
         } else { ine.quality={mode:'',sourceType:'',headerFound:false,missing:['Se encontró un archivo, pero no se reconoció la tabla de Registro de Existencia.']}; }
       } else { ine.quality={mode:'',sourceType:'',headerFound:false,missing:['No se encontró una hoja INE ni un Registro de Existencia.']}; }
+    }
+
+    // ---------- INE EXACTO DEL MAESTRO ----------
+    // Replica la estructura de la hoja "INE  (2)" usando BASE DE DATOS:
+    // PRODUCTO = columna AB, MES = AE, AÑO = AY, KG = SALIDA (U), NETO = AR.
+    // Las fórmulas del Maestro son:
+    // D = B/C; E = B/B15; F = C/C15; B18=B7+B8+B9; B19=C7+C8+C9; B20=B18/B19.
+    // Se conserva el resultado por producto y se expone el perfil de fórmulas para la impresión.
+    const bd = rowsPart('BASE DE DATOS');
+    if (!ir.length && bd.length > 1) {
+      const h0 = (bd[0] || []).map(v => String(v ?? '').trim().toUpperCase());
+      const idx = {};
+      h0.forEach((v,i)=>{ if(v) idx[v]=i; });
+      const required = ['PRODUCTO','MES','AÑO ','NETO','SALIDA'];
+      const hasRequired = ['PRODUCTO','MES','AÑO ','NETO','SALIDA'].every(k => idx[k] != null);
+      if (hasRequired) {
+        const monthRows = [];
+        let detectedYear = '';
+        let detectedMonth = '';
+        for (const r of bd.slice(1)) {
+          const month = String(r[idx['MES']] ?? '').trim().toLowerCase();
+          const year = String(r[idx['AÑO ']] ?? r[idx['AÑO']] ?? '').trim();
+          if (!month || !year) continue;
+          if (!detectedYear) { detectedYear=year; detectedMonth=month; }
+          // Si el archivo trae una sola combinación mes/año, usarla. Si trae varias,
+          // se usa la combinación más reciente presente en el archivo.
+          monthRows.push({r,month,year});
+        }
+        const monthsOrder={enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,julio:7,agosto:8,septiembre:9,setiembre:9,octubre:10,noviembre:11,diciembre:12};
+        if(monthRows.length){
+          const latest=monthRows.slice().sort((a,b)=>(Number(b.year)-Number(a.year)) || ((monthsOrder[b.month]||0)-(monthsOrder[a.month]||0)))[0];
+          const targetYear=latest.year, targetMonth=latest.month;
+          const grouped=new Map();
+          for(const x of monthRows){
+            if(x.year!==targetYear || x.month!==targetMonth) continue;
+            const r=x.r; const name=String(r[idx['PRODUCTO']]??'').trim(); if(!name) continue;
+            const net=n(r[idx['NETO']]); const kg=n(r[idx['SALIDA']]);
+            if(!net && !kg) continue;
+            const key=name.toUpperCase(); const z=grouped.get(key)||{name,neto:0,kg:0};
+            z.neto+=net; z.kg+=kg; grouped.set(key,z);
+          }
+          const items=[...grouped.values()];
+          const totalNeto=items.reduce((a,x)=>a+x.neto,0), totalKg=items.reduce((a,x)=>a+x.kg,0);
+          if(items.length && totalNeto){
+            const harinas=items.filter(x=>/^HARINA\b/i.test(x.name)).slice(0,3);
+            const netoHarinas=harinas.reduce((a,x)=>a+x.neto,0), kgHarinas=harinas.reduce((a,x)=>a+x.kg,0);
+            const exact={
+              totalNeto,totalKg,totalPromedio:totalKg?totalNeto/totalKg:0,
+              netoHarinas,kgHarinas,promedioHarinas:kgHarinas?netoHarinas/kgHarinas:0,
+              items:items.map(x=>({...x,promedio:x.kg?x.neto/x.kg:0,vn:totalNeto?x.neto/totalNeto:0,kgp:totalKg?x.kg/totalKg:0})),
+              periodo:`${targetMonth} ${targetYear}`,
+              quality:{mode:'INE EXACTO DESDE MAESTRO',sourceType:'ventas-maestro',headerFound:true,missing:[],masterFormulaProfile:{
+                producto:'AB = PRODUCTO',mes:'AE = MES',anio:'AY = AÑO',neto:'AR = NETO',kg:'U = SALIDA',
+                promedio:'Dfila = Bfila / Cfila',vn:'Efila = Bfila / B15',kgp:'Ffila = Cfila / C15',
+                totalNeto:'B15 = SUM(B7:B14)',totalKg:'C15 = SUM(C7:C14)',totalPromedio:'D15 = B15 / C15',
+                netoHarinas:'B18 = B7 + B8 + B9',kgHarinas:'B19 = C7 + C8 + C9',promedioHarinas:'B20 = B18 / B19'
+              },calculation:'INE replicado desde BASE DE DATOS del Maestro con las mismas columnas y fórmulas de la hoja INE (2).'},
+              inventory:{},sourceName:'BASE DE DATOS'
+            };
+            // Este resultado es el que debe usar la app cuando el archivo cargado es un Maestro.
+            ine.totalNeto=exact.totalNeto; ine.totalKg=exact.totalKg; ine.totalPromedio=exact.totalPromedio;
+            ine.netoHarinas=exact.netoHarinas; ine.kgHarinas=exact.kgHarinas; ine.promedioHarinas=exact.promedioHarinas;
+            ine.items=exact.items; ine.periodo=exact.periodo; ine.quality=exact.quality; ineSource='BASE DE DATOS';
+          }
+        }
+      }
     }
 
     // ---------- SACOS ----------
