@@ -24,7 +24,7 @@ async function parseXlsx(buf){const z=await unzipEntries(buf),get=async name=>z.
   // según cómo se haya creado/copied el libro. La lógica de negocio es la misma.
   const normSheetName = v => String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
   const targets=new Set(['BASE DE DATOS','INE (2)','NESTLE SACOS','NESTLE Y CPW','LIBRO','GUIAS'].map(normSheetName));
-  const baseKeep=new Set([0,1,2,9,13,14,15,17,20,27,28,29,30,31,40,43,44,45,46,47,48,49,50]);
+  const baseKeep=new Set([0,1,2,9,13,14,15,17,20,27,28,29,30,31,35,39,40,42,43,44,45,46,47,48,49,50]);
   const sheets=[];
   for(const m of wb.match(/<sheet\b[^>]*>/gi)||[]){const name=attr(m,'name'),rid=attr(m,'r:id')||attr(m,'id');let target=relMap[rid]||'';target=target.replace(/^\.\//,'');target=target.replace(/^\/+/, '').replace(/^\.\//,'');if(!target.startsWith('xl/'))target='xl/'+target;let rows=[];
     if(target&&z.has(target)){
@@ -266,7 +266,74 @@ self.onmessage = async (e) => {
     let ir = rowsPart('INE');
     const ineSourceSheet = sheetPart('INE') || '';
     const bd = rowsPart('BASE DE DATOS');
+
+    const eh=(name,header)=>{const u=(header||[]).map(v=>String(v??'').trim().toUpperCase());return u.indexOf(name)};
+
+    // V47.0: Construye la pauta INE mensual directamente desde BASE DE DATOS,
+    // usando los resultados de las fórmulas del Maestro (AQ/AR) y Salida (U).
+    // Esto permite comparar cualquier Registro de Existencia con el Maestro
+    // acumulativo sin depender exclusivamente de la hoja INE (2), que refleja
+    // solo el período que tenga seleccionado el Excel.
+    const MONTHS_ES = Object.freeze({
+      enero:'01',febrero:'02',marzo:'03',abril:'04',mayo:'05',junio:'06',
+      julio:'07',agosto:'08',septiembre:'09',octubre:'10',noviembre:'11',diciembre:'12'
+    });
+    const monthKeyFromRow = (r) => {
+      const mes = String(r?.[eh('MES', bd?.[0]||[])] ?? r?.[30] ?? '').trim().toLowerCase();
+      const anio = String(r?.[eh('AÑO', bd?.[0]||[])] ?? r?.[50] ?? '').trim();
+      const mm = MONTHS_ES[mes];
+      return (mm && /^\d{4}$/.test(anio)) ? `${anio}-${mm}` : '';
+    };
+    const buildMonthlyMasterIne = (baseRows) => {
+      const h=(baseRows[0]||[]).map(v=>String(v??'').trim().toUpperCase());
+      const idx={}; h.forEach((v,i)=>{if(v)idx[v]=i});
+      const iMes=idx['MES'], iAno=idx['AÑO'], iCodigo=idx['CÓDIGO'] ?? idx['CODIGO'];
+      const iProducto=idx['PRODUCTO'], iSalida=idx['SALIDA'], iAQ=idx['VALOR PROMEDIO'], iAR=idx['NETO'];
+      if([iMes,iAno,iProducto,iSalida].some(v=>v==null)) return {};
+      const acc=new Map();
+      for(const r of baseRows.slice(1)){
+        const mes=String(r?.[iMes]??'').trim().toLowerCase();
+        const anio=String(r?.[iAno]??'').trim();
+        const mm=MONTHS_ES[mes];
+        if(!mm || !/^\d{4}$/.test(anio)) continue;
+        const key=`${anio}-${mm}`;
+        const fam=ineFamilyByCode(iCodigo!=null?r?.[iCodigo]:'', iProducto!=null?r?.[iProducto]:'');
+        if(!fam) continue;
+        const kg=n(iSalida!=null?r?.[iSalida]:0);
+        const aq=n(iAQ!=null?r?.[iAQ]:0);
+        const arCached=n(iAR!=null?r?.[iAR]:0);
+        if(!acc.has(key)) acc.set(key,new Map(INE_FAMILIES.map(name=>[name,{name,neto:0,kg:0,rows:0,auditNet:0}] )));
+        const z=acc.get(key).get(fam);
+        // AR del Maestro = AQ * Salida. Preferimos reconstruir la fórmula desde
+        // los valores calculados por el propio Maestro y auditamos contra AR.
+        const arFormula=aq*kg;
+        const neto=(Number.isFinite(arFormula) && (arFormula!==0 || arCached===0)) ? arFormula : arCached;
+        z.neto += neto;
+        z.kg += kg;
+        z.rows += 1;
+        z.auditNet += arCached;
+      }
+      const out={};
+      for(const [key, fmap] of acc.entries()){
+        const items=INE_FAMILIES.map(name=>{
+          const x=fmap.get(name)||{name,neto:0,kg:0,rows:0,auditNet:0};
+          return {name,neto:x.neto,kg:x.kg,promedio:divideSafe(x.neto,x.kg),auditRows:x.rows,auditNetoExcel:x.auditNet};
+        });
+        const calc=calcIne(items,key,{mode:'BASE DE DATOS MENSUAL',sourceType:'ventas-maestro',headerFound:true,missing:[],sourceSheet:'BASE DE DATOS',calculation:'Maestro mensual: NETO = AQ (VALOR PROMEDIO) * SALIDA(U); PROMEDIO = NETO/KG; VN = NETO/NETO total; KGP = KG/KG total.'});
+        // Auditoría contra el valor almacenado por Excel en AR.
+        const audit=[];
+        for(const it of items){
+          const excelNeto=it.auditNetoExcel;
+          if(Math.abs(excelNeto-it.neto)>1e-9) audit.push({name:it.name,excelNeto,formulaNeto:it.neto,diff:it.neto-excelNeto});
+        }
+        calc.quality.masterMonthlyAudit={ok:audit.length===0,differences:audit,sourceColumns:{salida:'U = Salida',aq:'AQ = VALOR PROMEDIO = AJ+AN',neto:'AR = NETO = AQ*Salida'}};
+        out[key]=calc;
+      }
+      return out;
+    };
     const ine = { totalNeto:0,totalKg:0,totalPromedio:0,netoHarinas:0,kgHarinas:0,promedioHarinas:0,items:[],periodo:'',quality:{mode:'',sourceType:'',headerFound:false,missing:[]},inventory:{saldoAnterior:0,saldoAnterior$:0,entradaKg:0,salidaKg:0,entrada$:0,salida$:0,disponibleKg:0,disponible$:0,reservasKg:0,consignacionKg:0,transitoriaKg:0,totalValorizado$:0} };
+
+    const masterIneByPeriod = buildMonthlyMasterIne(bd);
 
     // V45.9: si el archivo contiene un Registro de Existencia Físico-Valorizado,
     // este es la fuente del INE. No se permite que BASE DE DATOS o INE (2) lo
@@ -747,6 +814,7 @@ self.onmessage = async (e) => {
       lastLoaded: Date.now(),
       sheets,
       metrics: { ine, sacos: { ventasSacos, kgSacos, items: sacItems }, granel: { totalGranel, items: granelItems }, iva: iv },
+      masterIneByPeriod,
       documents,
       clients,
       guides,
