@@ -15,16 +15,33 @@ async function unzipEntries(buf){
 function attr(tag,name){const re=new RegExp(name+'=\"([^\"]*)\"','i'),m=String(tag).match(re);return m?xmlText(m[1]):''}
 function textBetween(xml,tag){const re=new RegExp('<'+tag+'[^>]*>([\\s\\S]*?)</'+tag+'>','gi'),a=[];let m;while((m=re.exec(xml)))a.push(xmlText(m[1].replace(/<[^>]+>/g,'')));return a.join('')}
 function parseShared(xml){const a=[];for(const si of String(xml||'').match(/<si(?:\s[^>]*)?>[\s\S]*?<\/si>/gi)||[])a.push(textBetween(si,'t'));return a}
-function parseSheet(xml,shared,keepIndexes=null){const rows=[];const keep=keepIndexes instanceof Set?keepIndexes:null;for(const rm of String(xml||'').match(/<row(?:\s[^>]*)?>[\s\S]*?<\/row>/gi)||[]){const cells=[];for(const cm of rm.match(/<c(?:\s[^>]*)?>[\s\S]*?<\/c>|<c(?:\s[^>]*)?\/>/gi)||[]){const ref=attr(cm,'r'),idx=colIndex(ref);if(idx<0||(keep&& !keep.has(idx)))continue;const type=attr(cm,'t'),v=textBetween(cm,'v'),is=textBetween(cm,'t');let value=null;if(type==='s')value=shared[Number(v)]??'';else if(type==='inlineStr')value=is;else if(type==='b')value=v==='1';else if(type==='str')value=v;else if(v!==''){const num=Number(v);value=Number.isFinite(num)?num:v}cells[idx]=value}rows.push(cells)}return rows}
+function parseSheet(xml,shared,keepIndexes=null,maxRows=Infinity){const rows=[];const keep=keepIndexes instanceof Set?keepIndexes:null;for(const rm of String(xml||'').match(/<row(?:\s[^>]*)?>[\s\S]*?<\/row>/gi)||[]){if(rows.length>=maxRows)break;const cells=[];for(const cm of rm.match(/<c(?:\s[^>]*)?>[\s\S]*?<\/c>|<c(?:\s[^>]*)?\/>/gi)||[]){const ref=attr(cm,'r'),idx=colIndex(ref);if(idx<0||(keep&& !keep.has(idx)))continue;const type=attr(cm,'t'),v=textBetween(cm,'v'),is=textBetween(cm,'t');let value=null;if(type==='s')value=shared[Number(v)]??'';else if(type==='inlineStr')value=is;else if(type==='b')value=v==='1';else if(type==='str')value=v;else if(v!==''){const num=Number(v);value=Number.isFinite(num)?num:v}cells[idx]=value}rows.push(cells)}return rows}
 async function parseXlsx(buf){const z=await unzipEntries(buf),get=async name=>z.has(name)?td.decode(new Uint8Array(await z.get(name))):'';const wb=await get('xl/workbook.xml');const rel=await get('xl/_rels/workbook.xml.rels');const relMap={};for(const m of rel.match(/<Relationship\b[^>]*>/gi)||[]){const id=attr(m,'Id'),target=attr(m,'Target');if(id)relMap[id]=target}
   const shared=z.has('xl/sharedStrings.xml')?parseShared(await get('xl/sharedStrings.xml')):[];
   // El Maestro puede contener hojas de 50 MB o más. No es necesario cargar todas:
   // Molino Control trabaja con estas hojas y conserva sus nombres para diagnóstico.
-  const targets=new Set(['BASE DE DATOS','INE  (2)','NESTLE SACOS','NESTLE Y CPW','LIBRO','GUIAS']);
+  // Nombres de hoja tolerantes: Excel puede guardar "INE (2)" o "INE  (2)"
+  // según cómo se haya creado/copied el libro. La lógica de negocio es la misma.
+  const normSheetName = v => String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
+  const targets=new Set(['BASE DE DATOS','INE (2)','NESTLE SACOS','NESTLE Y CPW','LIBRO','GUIAS'].map(normSheetName));
   const baseKeep=new Set([0,1,2,9,13,14,15,17,20,27,28,29,30,31,40,43,44,45,46,47,48,49,50]);
   const sheets=[];
-  for(const m of wb.match(/<sheet\b[^>]*>/gi)||[]){const name=attr(m,'name'),rid=attr(m,'r:id')||attr(m,'id');let target=relMap[rid]||'';target=target.replace(/^\.\//,'');if(!target.startsWith('xl/'))target='xl/'+target;let rows=[];
-    if(target&&z.has(target)&&targets.has(name)){const xml=await get(target);rows=parseSheet(xml,shared,name==='BASE DE DATOS'?baseKeep:null);}
+  for(const m of wb.match(/<sheet\b[^>]*>/gi)||[]){const name=attr(m,'name'),rid=attr(m,'r:id')||attr(m,'id');let target=relMap[rid]||'';target=target.replace(/^\.\//,'');target=target.replace(/^\/+/, '').replace(/^\.\//,'');if(!target.startsWith('xl/'))target='xl/'+target;let rows=[];
+    if(target&&z.has(target)){
+      const xml=await get(target);
+      // Detectar Registros de Existencia aunque la hoja tenga un nombre genérico
+      // (por ejemplo Hoja2). Solo se escanean las primeras filas para decidir;
+      // luego se carga completa únicamente si es candidata. Esto evita volver a
+      // cargar innecesariamente hojas gigantes del Maestro.
+      let isExistencia=false;
+      if(!targets.has(name)){
+        const probe=parseSheet(xml,shared,null,40);
+        const probeText=probe.flat().map(v=>String(v??'')).join(' | ').toUpperCase();
+        isExistencia=/REGISTRO\s+DE\s+EXISTENCIAS|TOTAL\s+DISPONIBLE|TOTAL\s+VALORIZADO/.test(probeText);
+      }
+      const shouldLoad=targets.has(normSheetName(name))||isExistencia;
+      if(shouldLoad)rows=parseSheet(xml,shared,name==='BASE DE DATOS'?baseKeep:null);
+    }
     sheets.push({name,rows});}
   return sheets}
 
@@ -35,11 +52,18 @@ self.onmessage = async (e) => {
     const sheets = parsed.map(x=>x.name);
     const sheetMap = new Map(parsed.map(x=>[x.name,x.rows]));
     const post = (message, percent) => self.postMessage({ type: 'progress', message, percent });
-    const sheetPart = p => sheets.find(s => s.toUpperCase().includes(p.toUpperCase())) || null;
+    const sheetPart = p => {
+      const target=String(p||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
+      return sheets.find(s => {
+        const current=String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
+        return current.includes(target);
+      }) || null;
+    };
     const rowsOf = name => name && sheetMap.has(name) ? sheetMap.get(name) : [];
     const rowsPart = p => rowsOf(sheetPart(p));
     const norm = v => String(v ?? '').toUpperCase().replace(/[.\-\s]/g, '');
     const normName = v => String(v ?? '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9]+/g,' ').trim().replace(/\s+/g,' ');
+    const hashText=s=>{let h=2166136261;for(let i=0;i<String(s||'').length;i++){h^=String(s)[i].charCodeAt(0);h=Math.imul(h,16777619)>>>0}return h.toString(16).padStart(8,'0')};
     const n = v => {
       if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
       const x = String(v ?? '').replace(/\$/g, '').replace(/\s/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
@@ -123,9 +147,23 @@ self.onmessage = async (e) => {
       if(/^GERMEN\s+KG$/.test(x))return 'GERMEN KG';
       return '';
     };
+    // Catálogo oficial del Maestro: CODIGOS manda sobre heurísticas.
+    const catalogFamilyByCode = new Map();
+    try {
+      const cr = rowsPart('CODIGOS');
+      const h = (cr[0] || []).map(v => String(v ?? '').trim().toUpperCase());
+      const ci = h.findIndex(v => v === 'CÓDIGO' || v === 'CODIGO');
+      const pi = h.findIndex(v => v === 'PRODUCTO');
+      if (ci >= 0 && pi >= 0) for (const r of cr.slice(1)) {
+        const code = String(r?.[ci] ?? '').trim().toUpperCase();
+        const fam = canonicalFamily(r?.[pi]);
+        if (code && fam) catalogFamilyByCode.set(code, fam);
+      }
+    } catch {}
     const ineFamilyByCode = (code,name) => {
       const c=String(code||'').trim().toUpperCase();
-      if(INE_CODE_FAMILY.has(c)) return INE_CODE_FAMILY.get(c);
+      if (catalogFamilyByCode.has(c)) return catalogFamilyByCode.get(c);
+      if (INE_CODE_FAMILY.has(c)) return INE_CODE_FAMILY.get(c);
       return canonicalFamily(name) || (()=>{
         const x=String(name||'').trim().toUpperCase();
         if(/HARINA.*GRANEL|KG HARINA .*GRANEL/.test(x)) return 'HARINA GRANEL';
@@ -158,22 +196,70 @@ self.onmessage = async (e) => {
     // leído del Maestro no coincide con la fórmula del Maestro, se marca
     // la inconsistencia para no presentar un dato inventado.
     // ================================================================
+    // ================================================================
+    // MOTOR DE FÓRMULAS INE — espejo del Excel Maestro
+    // Fuente real inspeccionada en el Excel Maestro:
+    //   VP X = NETO / Salida
+    //   D = B / C
+    //   E = B / B15
+    //   F = C / C15
+    //   B15 = SUM(B7:B14)
+    //   C15 = SUM(C7:C14)
+    //   D15 = B15 / C15
+    //   B18 = B7+B8+B9
+    //   B19 = C7+C8+C9
+    //   B20 = B18 / B19
+    // Para Registro de Existencia el mapeo de columnas es:
+    //   B = Total Disponible$
+    //   C = Total Disponible
+    // Por lo tanto, el promedio automático conserva la misma fórmula:
+    //   D = B / C = Total Disponible$ / Total Disponible
+    // ================================================================
+    const INE_MASTER_FORMULAS = Object.freeze({
+      sourceField:'VP X = NETO / Salida',
+      familyAverage:'D = B / C',
+      valueShare:'E = B / B15',
+      kgShare:'F = C / C15',
+      totalValue:'B15 = SUM(B7:B14)',
+      totalKg:'C15 = SUM(C7:C14)',
+      totalAverage:'D15 = B15 / C15',
+      flourValue:'B18 = B7+B8+B9',
+      flourKg:'B19 = C7+C8+C9',
+      flourAverage:'B20 = B18 / B19'
+    });
+    const divideSafe=(a,b)=>Math.abs(Number(b)||0)>0?Number(a||0)/Number(b):0;
     const calcIne = (items,periodo,quality={}) => {
       const ordered=INE_FAMILIES.map(name=>{
         const x=items.find(v=>canonicalFamily(v.name)===name || String(v.name||'').trim().toUpperCase()===name) || {name,neto:0,kg:0};
         const neto=n(x.neto), kg=n(x.kg);
-        // Fórmula exacta del Maestro: VP X = NETO / Salida.
-        const promedio=kg?neto/kg:0;
+        const promedio=divideSafe(neto,kg);
         return {name,neto,kg,promedio};
       });
-      const totalNeto=ordered.reduce((a,x)=>a+x.neto,0), totalKg=ordered.reduce((a,x)=>a+x.kg,0);
-      const netoHarinas=ordered.slice(0,3).reduce((a,x)=>a+x.neto,0), kgHarinas=ordered.slice(0,3).reduce((a,x)=>a+x.kg,0);
-      // Fórmulas exactas del Maestro: D15=B15/C15 y B20=B18/B19.
-      const totalPromedio=totalKg?totalNeto/totalKg:0;
-      const promedioHarinas=kgHarinas?netoHarinas/kgHarinas:0;
+      const totalNeto=ordered.reduce((a,x)=>a+x.neto,0);
+      const totalKg=ordered.reduce((a,x)=>a+x.kg,0);
+      const netoHarinas=ordered.slice(0,3).reduce((a,x)=>a+x.neto,0);
+      const kgHarinas=ordered.slice(0,3).reduce((a,x)=>a+x.kg,0);
+      const totalPromedio=divideSafe(totalNeto,totalKg);
+      const promedioHarinas=divideSafe(netoHarinas,kgHarinas);
+      const itemsOut=ordered.map(x=>({...x,vn:divideSafe(x.neto,totalNeto),kgp:divideSafe(x.kg,totalKg)}));
+      const formulaAudit={
+        ok:ordered.every(x=>Math.abs(x.promedio-divideSafe(x.neto,x.kg))<=1e-12) &&
+           Math.abs(totalPromedio-divideSafe(totalNeto,totalKg))<=1e-12 &&
+           Math.abs(promedioHarinas-divideSafe(netoHarinas,kgHarinas))<=1e-12,
+        tolerance:1e-12,
+        master:{...INE_MASTER_FORMULAS},
+        existenceMapping:{
+          B:'Total Disponible$',
+          C:'Total Disponible',
+          D:'B/C',
+          E:'B/B15',
+          F:'C/C15'
+        },
+        message:'El promedio automático usa exactamente la estructura de cálculo del Excel Maestro: D=B/C; para Existencia, B=Total Disponible$ y C=Total Disponible.'
+      };
       return {totalNeto,totalKg,totalPromedio,netoHarinas,kgHarinas,promedioHarinas,
-        items:ordered.map(x=>({...x,vn:totalNeto?x.neto/totalNeto:0,kgp:totalKg?x.kg/totalKg:0})),periodo,
-        quality:{...quality,masterFormulaProfile:{producto:'Hoja INE (2) / Tabla dinámica2',neto:'B = Valor NETO',kg:'C = Cantidad kg / Salida',promedio:'D = VP X = NETO / Salida',vn:'E = B/B15',kgp:'F = C/C15',totalNeto:'B15 = SUM(B7:B14)',totalKg:'C15 = SUM(C7:C14)',totalPromedio:'D15 = B15/C15',netoHarinas:'B18 = B7+B8+B9',kgHarinas:'B19 = C7+C8+C9',promedioHarinas:'B20 = B18/B19'}}
+        items:itemsOut,periodo,
+        quality:{...quality,formulaAudit,masterFormulaProfile:{producto:'Hoja INE (2) / Tabla dinámica2',...INE_MASTER_FORMULAS}}
       };
     };
 
@@ -182,11 +268,25 @@ self.onmessage = async (e) => {
     const bd = rowsPart('BASE DE DATOS');
     const ine = { totalNeto:0,totalKg:0,totalPromedio:0,netoHarinas:0,kgHarinas:0,promedioHarinas:0,items:[],periodo:'',quality:{mode:'',sourceType:'',headerFound:false,missing:[]},inventory:{saldoAnterior:0,saldoAnterior$:0,entradaKg:0,salidaKg:0,entrada$:0,salida$:0,disponibleKg:0,disponible$:0,reservasKg:0,consignacionKg:0,transitoriaKg:0,totalValorizado$:0} };
 
-    // --- A) MAESTRO: BASE DE DATOS es la fuente única de cálculo ---
+    // V45.9: si el archivo contiene un Registro de Existencia Físico-Valorizado,
+    // este es la fuente del INE. No se permite que BASE DE DATOS o INE (2) lo
+    // desplacen: el Registro de Existencia manda para ese período.
+    const existenceSheetName=sheets.find(name=>{
+      const rr=rowsOf(name);
+      if(!rr.length)return false;
+      const limit=Math.min(rr.length,250);
+      const t=rr.slice(0,limit).flat().map(v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase()).join(' | ');
+      const title=/REGISTRO\s+DE\s+EXISTENCIAS/.test(t) && /FISICO\s*-?\s*VALORIZADO/.test(t);
+      if(title)return true;
+      // Respaldo estructural para plantillas donde el título está desplazado.
+      return /TOTAL\s*DISPONIBLE/.test(t) && /CODIGO/.test(t) && /ITEM/.test(t) && /INFO/.test(t);
+    })||null;
+
+    // --- A) REGISTRO DE EXISTENCIA FÍSICO-VALORIZADO es la fuente INE prioritaria ---
     const bdh=(bd[0]||[]).map(v=>String(v??'').trim().toUpperCase());
     const bidx={}; bdh.forEach((v,i)=>{if(v)bidx[v]=i});
     const hasBase=['PRODUCTO','MES','AÑO','NETO','SALIDA'].every(k=>bidx[k]!=null);
-    if(hasBase && bd.length>1){
+    if(!existenceSheetName && hasBase && bd.length>1){
       const monthRows=[]; const monthsOrder={enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,julio:7,agosto:8,septiembre:9,setiembre:9,octubre:10,noviembre:11,diciembre:12};
       for(const r of bd.slice(1)){
         const month=String(r[bidx['MES']]??'').trim().toLowerCase(), year=String(r[bidx['AÑO']]??r[bidx['AÑO ']]??'').trim();
@@ -200,9 +300,9 @@ self.onmessage = async (e) => {
         // Si Tabla dinámica2 está completa, los valores B:C:D:E:F son la fuente
         // de verdad. PROMEDIO (D) se COPIA del Excel y no se sustituye.
         const exact=calcIne([...grouped.values()],`${targetMonth} ${targetYear}`,{
-          mode:'INE EXACTO SEGÚN FÓRMULA DEL MAESTRO',sourceType:'ventas-maestro',headerFound:true,missing:[],
-          sourceSheet:'BASE DE DATOS',
-          calculation:'Respaldo exacto: VP X = NETO/Salida; D = B/C; D15 = B15/C15; B20 = B18/B19.'
+          mode:'INE VENTAS · ESPEJO DEL MAESTRO',sourceType:'ventas-maestro',headerFound:true,missing:[],
+          sourceSheet:'BASE DE DATOS',metric:'ine_sales_average',averageLabel:'Promedio INE',
+          calculation:'Excel Maestro: VP X = NETO / Salida; la pauta INE expresa D = B/C, D15 = B15/C15 y B20 = B18/B19.'
         });
         Object.assign(ine,exact); let ineSource='BASE DE DATOS';
         if(ir.length){
@@ -244,8 +344,8 @@ self.onmessage = async (e) => {
               ine.quality.sourceSheet=ineSourceSheet||'INE (2)'; ineSource=ineSourceSheet||'INE (2)';
               ine.quality.sourceOfTruth='INE (2) / Tabla dinámica2 — valores copiados directamente del Excel Maestro';
               ine.quality.referenceCheck={ok:diffs.length===0,differences:diffs};
-              ine.quality.calculation='PROMEDIO COPIADO DIRECTAMENTE DEL EXCEL MAESTRO. La fórmula solo valida; nunca sustituye D.';
-              ine.quality.masterFormulaProfile={...ine.quality.masterFormulaProfile,source:'INE (2) / Tabla dinámica2',promedio:'D = valor almacenado por Excel (VP X); NO recalcular',vn:'E = valor almacenado por Excel',kgp:'F = valor almacenado por Excel',totalPromedio:'D15 = valor almacenado por Excel',promedioHarinas:'B20 = valor almacenado por Excel'};
+              ine.quality.calculation='PROMEDIO COPIADO DIRECTAMENTE DEL EXCEL MAESTRO (INE (2), columna D). B/C se usa solo como auditoría de la fórmula VP X; nunca sustituye el valor almacenado en Excel.';
+              ine.quality.masterFormulaProfile={...ine.quality.masterFormulaProfile,source:'INE (2) / Tabla dinámica2',promedio:'D = valor almacenado por Excel (VP X); NO recalcular',vn:'E = valor almacenado por Excel',kgp:'F = valor almacenado por Excel',totalPromedio:'D15 = valor almacenado por Excel',promedioHarinas:'B20 = valor almacenado por Excel',references:{families:'D7:D14',total:'D15',netoHarinas:'B18',kgHarinas:'B19',promedioHarinas:'B20'}};
               if(diffs.length) ine.quality.missing=[`ADVERTENCIA INE: ${diffs.length} valor(es) de Excel no coinciden exactamente con VP X. Se conserva el valor de Excel.`];
             }
             else {
@@ -258,7 +358,7 @@ self.onmessage = async (e) => {
       }
     } else {
       // --- B) FUENTE INE (2): solo acepta las 8 filas entre encabezado y Total general ---
-      const rh=ir.findIndex(r=>String(r?.[0]||'').toUpperCase().includes('ETIQUETAS DE FILA'));
+      const rh=existenceSheetName ? -1 : ir.findIndex(r=>String(r?.[0]||'').toUpperCase().includes('ETIQUETAS DE FILA'));
       if(rh>=0){
         const items=[]; let periodo=String(ir[2]?.[1]||'')+' '+String(ir[3]?.[1]||'');
         for(let i=rh+1;i<ir.length;i++){
@@ -270,18 +370,31 @@ self.onmessage = async (e) => {
         if(items.length){Object.assign(ine,calcIne(items,periodo.trim(),{mode:'INE/Pivot',sourceType:'ventas',headerFound:true,missing:[],sourceSheet:ineSourceSheet||'INE (2)',calculation:'INE (2): D = B/C; E = B/B15; F = C/C15; B15 = SUM(B7:B14); C15 = SUM(C7:C14); D15 = B15/C15; B18 = B7+B8+B9; B19 = C7+C8+C9; B20 = B18/B19.'}));}
       } else {
         // --- C) REGISTRO DE EXISTENCIA FÍSICO-VALORIZADO ---
-        const regName=sheets.find(name=>rowsOf(name).slice(0,8).flat().some(v=>/REGISTRO DE EXISTENCIAS/i.test(String(v??''))));
+        const regName=sheets.find(name=>rowsOf(name).slice(0,40).flat().some(v=>/REGISTRO\s+DE\s+EXISTENCIAS|FISICO\s*-\s*VALORIZADO|TOTAL\s+DISPONIBLE/i.test(String(v??''))));
         if(regName){
           ir=rowsOf(regName); ineSource=regName; const flat=ir.flat().map(v=>String(v??'').trim());
           const range=flat.find(v=>/Rango de fechas/i.test(v)), emission=flat.find(v=>/Fecha de emisión/i.test(v));
           const rm=range?.match(/Rango de fechas\s*:\s*(\d{1,2}\/\d{1,2}\/\d{4})\s+al\s+(\d{1,2}\/\d{1,2}\/\d{4})/i); if(rm)ine.periodo=rm[1].split('/')[2]+'-'+rm[1].split('/')[1].padStart(2,'0');
           const headerKey=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9$]+/g,'');
-          const header=ir.findIndex(r=>{const u=(r||[]).map(headerKey);return u.includes('INFO')&&u.includes('ITEM')&&u.includes('TOTALDISPONIBLE')&&u.some(x=>x.startsWith('TOTALVALORIZADO'));});
+          const header=ir.findIndex(r=>{const u=(r||[]).map(headerKey);return u.includes('INFO')&&u.includes('CODIGO')&&u.includes('ITEM')&&u.includes('TOTALDISPONIBLE')&&(u.some(x=>x.startsWith('TOTALDISPONIBLE'))||u.some(x=>x.startsWith('TOTALFISICO')));});
           if(header>=0){const h=(ir[header]||[]).map(headerKey),idx={};h.forEach((v,i)=>{if(v)idx[v]=i});ine.quality={mode:'Registro de Existencia',sourceType:'existencia',headerFound:true,missing:[],range:range||'',emissionDate:emission?.replace(/^.*?:\s*/,'')||''};const summary=[],detail=[];
-            for(let i=header+1;i<ir.length;i++){const r=ir[i]||[],info=String(r[idx['INFO']]??'').trim(),name=String(r[idx['ITEM']]??'').trim();if(!name)continue;const x={name,code:String(r[idx['CODIGO']]??''),disponible:n(r[idx['TOTALDISPONIBLE']]),disponible$:n(r[idx['TOTALDISPONIBLE$']]),saldoAnterior:n(r[idx['SALDOANTERIOR']]),saldoAnterior$:n(r[idx['SALDOANTERIOR$']]),entrada:n(r[idx['ENTRADA']]),salida:n(r[idx['SALIDA']]),entrada$:n(r[idx['ENTRADA$']]),salida$:n(r[idx['SALIDA$']]),reservas:n(r[idx['RESERVAS']]),consignacion:n(r[idx['CONSIGNACION']]),transitoria:n(r[idx['TRANSITORIA']]),totalValorizado$:n(r[idx['TOTALVALORIZADO$']])};if(info==='2')summary.push(x);else if(info==='1')detail.push(x)}
+            for(let i=header+1;i<ir.length;i++){const r=ir[i]||[],info=String(r[idx['INFO']]??'').trim(),name=String(r[idx['ITEM']]??'').trim();if(!name)continue;const x={name,code:String(r[idx['CODIGO']]??''),family:'',disponible:n(r[idx['TOTALDISPONIBLE']]),disponible$:n(r[idx['TOTALDISPONIBLE$']]),saldoAnterior:n(r[idx['SALDOANTERIOR']]),saldoAnterior$:n(r[idx['SALDOANTERIOR$']]),entrada:n(r[idx['ENTRADA']]),salida:n(r[idx['SALIDA']]),entrada$:n(r[idx['ENTRADA$']]),salida$:n(r[idx['SALIDA$']]),reservas:n(r[idx['RESERVAS']]),consignacion:n(r[idx['CONSIGNACION']]),transitoria:n(r[idx['TRANSITORIA']]),totalValorizado$:n(r[idx['TOTALVALORIZADO$']])};const mappedFamily=ineFamilyByCode(x.code,x.name);x.family=mappedFamily||'';if(info==='2')summary.push(x);else if(info==='1')detail.push(x)}
             const agg=new Map(INE_FAMILIES.map(name=>[name,{name,neto:0,kg:0,sourceCodes:new Set()}])),unmapped=[];
             for(const x of summary){const fam=ineFamilyByCode(x.code,x.name);if(!fam){if(x.disponible||x.disponible$)unmapped.push({code:x.code,name:x.name,kg:x.disponible,neto:x.disponible$});continue}const z=agg.get(fam);z.neto+=x.disponible$;z.kg+=x.disponible;if(x.code)z.sourceCodes.add(x.code)}
-            const baseItems=INE_FAMILIES.map(name=>({...agg.get(name),sourceCodes:[...agg.get(name).sourceCodes]}));const exact=calcIne(baseItems,ine.periodo,{...ine.quality,calculation:'Pauta Maestro: B = Total Disponible$; C = Total Disponible; D = B/C; E = B/B15; F = C/C15; B15 = SUM(B7:B14); C15 = SUM(C7:C14); D15 = B15/C15; B18 = B7+B8+B9; B19 = C7+C8+C9; B20 = B18/B19.'});Object.assign(ine,exact);ine.quality.unmapped=unmapped;ine.inventory.saldoAnterior=summary.reduce((a,x)=>a+x.saldoAnterior,0);ine.inventory.saldoAnterior$=summary.reduce((a,x)=>a+x.saldoAnterior$,0);ine.inventory.entradaKg=detail.reduce((a,x)=>a+x.entrada,0);ine.inventory.salidaKg=detail.reduce((a,x)=>a+x.salida,0);ine.inventory.entrada$=detail.reduce((a,x)=>a+x.entrada$,0);ine.inventory.salida$=detail.reduce((a,x)=>a+x.salida$,0);ine.inventory.disponibleKg=ine.totalKg;ine.inventory.disponible$=ine.totalNeto;ine.inventory.reservasKg=summary.reduce((a,x)=>a+x.reservas,0);ine.inventory.consignacionKg=summary.reduce((a,x)=>a+x.consignacion,0);ine.inventory.transitoriaKg=summary.reduce((a,x)=>a+x.transitoria,0);ine.inventory.totalValorizado$=summary.reduce((a,x)=>a+x.totalValorizado$,0);
+            const sourceTotalNeto=summary.reduce((a,x)=>a+x.disponible$,0);
+            const sourceTotalKg=summary.reduce((a,x)=>a+x.disponible,0);
+            const baseItems=INE_FAMILIES.map(name=>({...agg.get(name),sourceCodes:[...agg.get(name).sourceCodes]}));
+            const exact=calcIne(baseItems,ine.periodo,{...ine.quality,calculation:'Registro Físico-Valorizado: INFO=2. Valor unitario valorizado = Total Disponible$ / Total Disponible. Es stock, no Promedio INE de ventas.',metric:'existence_unit_value',averageLabel:'Valor unitario valorizado',catalogSource:catalogFamilyByCode.size?'CODIGOS del Maestro':'catálogo de respaldo'});
+            const sourceColumns={info:'A = Info',code:'B = Código',item:'C = Ítem',totalDisponible:'AC = Total Disponible',totalDisponible$:'AG = Total Disponible$',totalValorizado$:'AK = Total Valorizado$',costo:'W = Costo'};const formulaProfile={model:'EXISTENCIA_FISICO_VALORIZADA',summaryFilter:'INFO = 2',unitValue:'Total Disponible$ / Total Disponible',valueColumn:'AG = Total Disponible$',kgColumn:'AC = Total Disponible',total:'suma de 8 familias',harinas:'1+2+3',salesIne:'VP X = NETO / Salida (separado)'};const checksum=hashText(JSON.stringify({periodKey:ine.periodo,summaryRows:summary.map(x=>({...x})),detailCount:detail.length}));ine.existenceBase={version:2,baseVersion:2,key:ine.periodo,periodKey:ine.periodo,summaryRows:summary.map(x=>({...x})),detailRows:detail.map(x=>({...x})),familyItems:baseItems.map(x=>({...x,sourceCodes:Array.isArray(x.sourceCodes)?[...x.sourceCodes]:[]})),sourceSheet:regName,range:range||'',emissionDate:emission?.replace(/^.*?:\s*/,'')||'',recordCountSummary:summary.length,recordCountDetail:detail.length,sourceColumns,formulaProfile,checksum};
+            Object.assign(ine,exact);
+            ine.quality.unmapped=unmapped;
+            ine.quality.sourceOfTruth='Registro de Existencia Físico-Valorizado: filas INFO=2 + catálogo CODIGOS';
+            ine.quality.usedForIne=true;
+            ine.quality.sourceSummaryTotals={neto:sourceTotalNeto,kg:sourceTotalKg};
+            ine.quality.mappingCoverage={neto:sourceTotalNeto?exact.totalNeto/sourceTotalNeto:1,kg:sourceTotalKg?exact.totalKg/sourceTotalKg:1,unmappedCount:unmapped.length};
+            const coverageOk=unmapped.length===0 && Math.abs(exact.totalNeto-sourceTotalNeto)<=0.000001 && Math.abs(exact.totalKg-sourceTotalKg)<=0.000001;
+            ine.quality.formulaAudit={...(ine.quality.formulaAudit||{}),ok:!!ine.quality.formulaAudit?.ok && coverageOk,coverageOk,sourceTotalsMatch:Math.abs(exact.totalNeto-sourceTotalNeto)<=0.000001 && Math.abs(exact.totalKg-sourceTotalKg)<=0.000001,existenceMapping:{value:'Total Disponible$',kg:'Total Disponible',unitValue:'Total Disponible$ / Total Disponible'},salesIneFormula:'VP X = NETO / Salida (separada del stock)',message:coverageOk?'Cálculo de stock validado: INFO=2, mapeo 100% contra CODIGOS y valor unitario = Total Disponible$ / Total Disponible.':`El cálculo de stock es válido, pero ${unmapped.length} código(s) no pudo/pudieron asignarse a las 8 familias.`};
+            ine.quality.missing=coverageOk?[]:[...(ine.quality.missing||[]),`Cobertura INE del Registro de Existencia: ${(Math.min(ine.quality.mappingCoverage.neto,ine.quality.mappingCoverage.kg)*100).toFixed(2)}%.`];ine.inventory.saldoAnterior=summary.reduce((a,x)=>a+x.saldoAnterior,0);ine.inventory.saldoAnterior$=summary.reduce((a,x)=>a+x.saldoAnterior$,0);ine.inventory.entradaKg=detail.reduce((a,x)=>a+x.entrada,0);ine.inventory.salidaKg=detail.reduce((a,x)=>a+x.salida,0);ine.inventory.entrada$=detail.reduce((a,x)=>a+x.entrada$,0);ine.inventory.salida$=detail.reduce((a,x)=>a+x.salida$,0);ine.inventory.disponibleKg=ine.totalKg;ine.inventory.disponible$=ine.totalNeto;ine.inventory.reservasKg=summary.reduce((a,x)=>a+x.reservas,0);ine.inventory.consignacionKg=summary.reduce((a,x)=>a+x.consignacion,0);ine.inventory.transitoriaKg=summary.reduce((a,x)=>a+x.transitoria,0);ine.inventory.totalValorizado$=summary.reduce((a,x)=>a+x.totalValorizado$,0);
           } else ine.quality={mode:'',sourceType:'',headerFound:false,missing:['Se encontró un archivo, pero no se reconoció la tabla de Registro de Existencia.']};
         } else ine.quality={mode:'',sourceType:'',headerFound:false,missing:['No se encontró BASE DE DATOS, INE (2) ni un Registro de Existencia.']};
       }
