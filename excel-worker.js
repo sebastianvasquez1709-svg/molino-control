@@ -1,4 +1,4 @@
-// V49.0: lector XLSX robusto + fórmula INE Maestro universal para cualquier Registro de Existencia.
+// V49.1: lector XLSX robusto + fórmula INE Maestro universal + exclusión Softland de Notas de Crédito.
 // Corrige celdas vacías autocerradas para conservar las columnas S/U/AC/AG.
 // El cálculo de Existencia no depende de perfiles mensuales.
 const td=new TextDecoder('utf-8');
@@ -244,28 +244,69 @@ self.onmessage = async (e) => {
     };
     const normalizeFolioKey = (v) => { const x=Number(v); return Number.isFinite(x)?String(Number.isInteger(x)?x:x):String(v??'').trim(); };
     const masterTxKey = (r,idx) => [norm(idx?.code!=null?r[idx.code]:''),String(idx?.doc!=null?r[idx.doc]??'':'').trim(),normalizeFolioKey(idx?.folio!=null?r[idx.folio]:'')].join('|');
+    // --- PATCH V49.2: IDENTIFICACIÓN UNIVERSAL Y RECÁLCULO EXACTO DE NC ---
+    // Manual Softland IW: [NA] Nota de Crédito, [NT] Nota de Crédito Electrónica,
+    // [NX] Nota de Crédito Exportación y [NY] Nota de Crédito de Exportación Electrónica.
+    // Softland define NA/NT/NX/NY como Notas de Crédito. El manual indica que la Nota de Crédito
+    // no aumenta stock en bodega; la devolución física se gestiona mediante Guía de Entrada.
+    // El INE respeta la fórmula Maestro recalculada: al no ser FT/ST/BT, una NC queda en 0.
+    const CREDIT_NOTE_DOCS = new Set([
+      'NA','NT','NX','NY',
+      'NOTA DE CREDITO','NOTA DE CREDITO ELECTRONICA',
+      'NOTA DE CREDITO EXPORTACION','NOTA DE CREDITO DE EXPORTACION ELECTRONICA'
+    ]);
+    const normalizeDocType = v => String(v ?? '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .trim().toUpperCase().replace(/[\[\]\(\)]/g,' ').replace(/\s+/g,' ').trim();
+    const isCreditNoteDocument = v => {
+      const d=normalizeDocType(v);
+      // Softland IW: NA, NT, NX, NY son las codificaciones de Nota de Crédito.
+      // También se reconoce la descripción completa, con o sin "ELECTRONICA".
+      return CREDIT_NOTE_DOCS.has(d) || /^(NA|NT|NX|NY)(?:\b|$)/.test(d) || /NOTA\s+(?:DE\s+)?CREDITO(?:\s+ELECTRONICA)?(?:\s+EXPORTACION)?/.test(d);
+    };
+
     const applyFixedMasterFormula = (row={}) => {
-      const doc = String(row.docto ?? row.tipoDocumento ?? '').trim();
+      const rawDoc = String(row.docto ?? row.tipoDocumento ?? '').trim();
+      const doc = normalizeDocType(rawDoc);
       const s = Number(row.valorMovto);
       const u = Number(row.salida);
       const mov = Number.isFinite(s) ? s : 0;
       const kg = Number.isFinite(u) ? u : 0;
-      // AJ: solo Factura[FT] y Guía[ST] toman directamente Valor Movto.
-      const aj = (doc===MAESTRO_DOC_TYPES.invoice || doc===MAESTRO_DOC_TYPES.ticket) ? mov : 0;
-      // AM: para Boleta[BT] usa Valor Movto como clave de la tabla P.BOLETA.
-      const am = doc===MAESTRO_DOC_TYPES.receipt ? mov : null;
+      // FÓRMULA MAESTRO RE-CALCULADA:
+      // AJ = IF(OR(N=Factura[FT],N=Guía[ST]),S,0)
+      // AM = IF(N=Boleta[BT],S," ")
+      // AN = IFERROR(VLOOKUP(AM,CODIGOS!R16:S111,2,0),0)
+      // Por lo tanto una Nota de Crédito no satisface ninguna condición y
+      // queda automáticamente en 0. Se marca aparte para auditoría.
+      const isCreditNote = isCreditNoteDocument(rawDoc);
+      const aj = (!isCreditNote && (doc===normalizeDocType(MAESTRO_DOC_TYPES.invoice) || doc===normalizeDocType(MAESTRO_DOC_TYPES.ticket))) ? mov : 0;
+      const am = (!isCreditNote && doc===normalizeDocType(MAESTRO_DOC_TYPES.receipt)) ? mov : null;
       const an = am===null ? 0 : (Number(MAESTRO_BOLETA_LOOKUP[normalizeMovtoKey(am)]) || 0);
       const aq = aj + an;
       const ar = aq * kg;
-      return {doc, S:mov, U:kg, AJ:aj, AM:am, AN:an, AQ:aq, AR:ar};
+      return {doc:rawDoc, normalizedDoc:doc, S:mov, U:kg, isCreditNote, excludedFromStockCount:isCreditNote, AJ:aj, AM:am, AN:an, AQ:aq, AR:ar};
     };
 
     const deriveIneFromExistenceDetail = (detailRows, periodo) => {
       const key=String(periodo||'').trim();
       const agg=new Map(INE_FAMILIES.map(name=>[name,{name,kg:0,neto:0,rows:0,codes:new Set(),sources:new Set()}]));
       const unmapped=[];
+      const excludedCreditNotes=[];
       let formulaAppliedRows=0, formulaZeroRows=0;
       for(const r of (detailRows||[])){
+        const fx=applyFixedMasterFormula(r);
+        if(fx.isCreditNote){
+          excludedCreditNotes.push({
+            code:String(r?.code||'').trim().toUpperCase(),
+            name:String(r?.name||r?.item||'').trim(),
+            docto:String(r?.docto||'').trim(),
+            folio:String(r?.folio||'').trim(),
+            kg:n(r?.salida),
+            valorMovto:n(r?.valorMovto),
+            reason:'Nota de Crédito Softland identificada y excluida del cálculo por la propia fórmula Maestro recalculada (N no es FT/ST/BT); no entra a KG/NETO ni al conteo físico.'
+          });
+          continue;
+        }
         const fam=String(r?.family||'').trim().toUpperCase();
         const kg=n(r?.salida);
         if(!kg) continue;
@@ -274,7 +315,6 @@ self.onmessage = async (e) => {
           continue;
         }
         const z=agg.get(fam);
-        const fx=applyFixedMasterFormula(r);
         z.kg+=kg; z.neto+=fx.AR; z.rows++; formulaAppliedRows++;
         if(Math.abs(fx.AQ)<1e-12) formulaZeroRows++;
         const code=String(r?.code||'').trim().toUpperCase(); if(code) z.codes.add(code);
@@ -290,14 +330,18 @@ self.onmessage = async (e) => {
       const kgHarinas=items.slice(0,3).reduce((a,x)=>a+x.kg,0);
       items.forEach(x=>{x.vn=totalNeto?x.neto/totalNeto:0;x.kgp=totalKg?x.kg/totalKg:0;});
       return {
-        available:unmapped.length===0, key, periodo:key, items, totalKg, totalNeto,
+        available:unmapped.length===0, key, periodo:key, items, totalKg, totalNeto, excludedCreditNotes,
         totalPromedio:divideSafe(totalNeto,totalKg), netoHarinas, kgHarinas, promedioHarinas:divideSafe(netoHarinas,kgHarinas),
-        formula:'UNIVERSAL: AJ=IF(OR(N=Factura[FT],N=Guía[ST]),S,0); AM=IF(N=Boleta[BT],S," "); AN=IFERROR(VLOOKUP(AM,CODIGOS!R16:S111,2,0),0); AQ=AJ+AN; AR=AQ*U; D=B/C; E=B/B15; F=C/C15; D15=B15/C15; B18=B7+B8+B9; B19=C7+C8+C9; B20=B18/B19',
-        engineVersion:'V49.0', source:'FORMULA_MAESTRO_FIJA_APLICADA_AL_REGISTRO', sourceDescription:'Una sola fórmula fija copiada del BASE DE DATOS del Maestro. No depende del mes ni de perfiles mensuales.',
-        formulaSource:'MAESTRO_FORMULA_FIJA_UNIVERSAL', usesRegisterFormula:true, unmapped, missingReason:unmapped.length?'Existen líneas INFO=1 con códigos que no están en el catálogo Maestro; se bloquea el resultado oficial hasta resolverlas.':undefined,
-        audit:{periodKey:key,formulaVersion:'V49.0-UNIVERSAL',formulaRows:formulaAppliedRows,formulaZeroRows,documents:MAESTRO_DOC_TYPES,lookupEntries:Object.keys(MAESTRO_BOLETA_LOOKUP).length}
+        formula:'UNIVERSAL: NC identificadas [NA]/[NT]/[NX]/[NY] y anuladas por la propia condición AJ/AM/AN del Maestro;  AJ=IF(OR(N=Factura[FT],N=Guía[ST]),S,0); AM=IF(N=Boleta[BT],S," "); AN=IFERROR(VLOOKUP(AM,CODIGOS!R16:S111,2,0),0); AQ=AJ+AN; AR=AQ*U; D=B/C; E=B/B15; F=C/C15; D15=B15/C15; B18=B7+B8+B9; B19=C7+C8+C9; B20=B18/B19',
+        engineVersion:'V49.2', source:'FORMULA_MAESTRO_FIJA_RECALCULADA_AL_REGISTRO_CON_NC_IDENTIFICADA',
+        sourceDescription:'Una sola fórmula fija copiada/recalculada del BASE DE DATOS del Maestro. Las Notas de Crédito Softland se identifican y, al recalcular AJ/AM/AN, quedan en 0 automáticamente y se auditan por separado.',
+        formulaSource:'MAESTRO_FORMULA_FIJA_UNIVERSAL', usesRegisterFormula:true,
+        unmapped,
+        missingReason:unmapped.length?'Existen líneas INFO=1 con códigos que no están en el catálogo Maestro; se bloquea el resultado oficial hasta resolverlas.':undefined,
+        audit:{periodKey:key,formulaVersion:'V49.2-UNIVERSAL-NC-MAESTRO-EXACT',formulaRows:formulaAppliedRows,formulaZeroRows,documents:MAESTRO_DOC_TYPES,lookupEntries:Object.keys(MAESTRO_BOLETA_LOOKUP).length,excludedCreditNotes:excludedCreditNotes.length}
       };
     };
+
     const calcIne = (items,periodo,quality={}) => {
       const ordered=INE_FAMILIES.map(name=>{
         const x=items.find(v=>canonicalFamily(v.name)===name || String(v.name||'').trim().toUpperCase()===name) || {name,neto:0,kg:0};
