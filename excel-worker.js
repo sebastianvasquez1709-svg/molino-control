@@ -65,6 +65,7 @@ self.onmessage = async (e) => {
     const norm = v => String(v ?? '').toUpperCase().replace(/[.\-\s]/g, '');
     const normName = v => String(v ?? '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9]+/g,' ').trim().replace(/\s+/g,' ');
     const hashText=s=>{let h=2166136261;for(let i=0;i<String(s||'').length;i++){h^=String(s)[i].charCodeAt(0);h=Math.imul(h,16777619)>>>0}return h.toString(16).padStart(8,'0')};
+    const divideSafe=(a,b)=>Math.abs(Number(b)||0)>0?Number(a||0)/Number(b):0;
     const n = v => {
       if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
       const x = String(v ?? '').replace(/\$/g, '').replace(/\s/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.');
@@ -323,9 +324,8 @@ self.onmessage = async (e) => {
         else if(reconciliation.status==='DECIMAL_ONLY') reconciliation.message='La diferencia es solo de precisión numérica inferior a la tolerancia; no afecta el valor operativo mostrado.';
         else if(reconciliation.status==='EXACT_MATCH') reconciliation.message='Registro y Maestro coinciden en movimientos y cálculos para este período.';
       }
-      return {available:true,periodo,key,items,totalKg,totalNeto,totalPromedio:divideSafe(totalNeto,totalKg),netoHarinas,kgHarinas,promedioHarinas:divideSafe(netoHarinas,kgHarinas),formula:'AJ=IF(OR(N=Factura[FT],N=Guía[ST]),S,0); AM=IF(N=Boleta[BT],S," "); AN=IFERROR(VLOOKUP(AM,CODIGOS!R16:S111,2,0),0); AQ=AJ+AN; AR=AQ*U; D=B/C; E=B/B15; F=C/C15; D15=B15/C15; B18=B7+B8+B9; B19=C7+C8+C9; B20=B18/B19',engineVersion:'V48.2',source:'FORMULA_MAESTRO_FIJA_APLICADA_AL_REGISTRO',sourceDescription:'Fórmula fija copiada del BASE DE DATOS del Maestro. No depende del mes ni de un perfil mensual.',formulaSource:'MAESTRO_FORMULA_FIJA',unmapped:[],audit:{periodKey:key,formulaRows:formulaAppliedRows,formulaZeroRows,documents:MAESTRO_DOC_TYPES,lookupEntries:Object.keys(MAESTRO_BOLETA_LOOKUP).length,sourceReconciliation:reconciliation}};
+      return {available:true,periodo,key,items,totalKg,totalNeto,totalPromedio:divideSafe(totalNeto,totalKg),netoHarinas,kgHarinas,promedioHarinas:divideSafe(netoHarinas,kgHarinas),formula:'AJ=IF(OR(N=Factura[FT],N=Guía[ST]),S,0); AM=IF(N=Boleta[BT],S," "); AN=IFERROR(VLOOKUP(AM,CODIGOS!R16:S111,2,0),0); AQ=AJ+AN; AR=AQ*U; D=B/C; E=B/B15; F=C/C15; D15=B15/C15; B18=B7+B8+B9; B19=C7+C8+C9; B20=B18/B19',engineVersion:'V48.6',source:'FORMULA_MAESTRO_FIJA_APLICADA_AL_REGISTRO',sourceDescription:'Fórmula fija copiada del BASE DE DATOS del Maestro. No depende del mes ni de un perfil mensual.',formulaSource:'MAESTRO_FORMULA_FIJA',unmapped:[],audit:{periodKey:key,formulaRows:formulaAppliedRows,formulaZeroRows,documents:MAESTRO_DOC_TYPES,lookupEntries:Object.keys(MAESTRO_BOLETA_LOOKUP).length,sourceReconciliation:reconciliation}};
     };
-    const divideSafe=(a,b)=>Math.abs(Number(b)||0)>0?Number(a||0)/Number(b):0;
     const calcIne = (items,periodo,quality={}) => {
       const ordered=INE_FAMILIES.map(name=>{
         const x=items.find(v=>canonicalFamily(v.name)===name || String(v.name||'').trim().toUpperCase()===name) || {name,neto:0,kg:0};
