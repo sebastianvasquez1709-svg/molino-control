@@ -1,10 +1,12 @@
 
 (()=>{
 'use strict';
-const APP_VERSION='V48.3';
+const APP_VERSION='V48.5';
 const ADMIN_RUT='184467267',ACCESS_KEY='1234',DB='molino-control-data';
 const state={user:'',role:'OPERADOR',snapshot:null,page:1,search:{},invoiceFilters:{from:'',to:'',month:'',day:'',userSet:false},dispatchDraftItems:[],dispatchPlan:[],ineSelected:'',ineMonths:[],existenceSelected:'',existenceRecords:[],existenceBaseRecords:[]};
 const CONTACTS_DB='molino-client-contacts-v1';
+const hashText=(value)=>{let h=2166136261;const s=String(value??'');for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0}return h.toString(16).padStart(8,'0')};
+const REGISTRO_CODE_FAMILY_CLIENT=Object.freeze({"10KG":"HARINA 10 KG","25OSN":"HARINA 25KG","25PAP":"HARINA 25KG","25POLI":"HARINA 25KG","DB":"HARINA GRANEL","DEBILGRAN":"HARINA GRANEL","DEBILPAP":"HARINA 25KG","DEBILPAPEL":"HARINA 25KG","DN":"HARINA GRANEL","ESP10":"HARINA 10 KG","ESPOSN":"HARINA 25KG","ESPPAP":"HARINA 25KG","ESPPOLI":"HARINA 25KG","FUERTEGRA":"HARINA GRANEL","FUERTEPAP":"HARINA 25KG","GERGRA":"GERMEN KG","GERMEN":"GERMEN KG","GRITZGR":"GRITZ SEMOL KG","GRITZGRP":"GRITZ SEMOL KG","GRITZM":"GRITZ SEMOL KG","HF800":"H. F. MAIZ KG","HFM":"H. F. MAIZ KG","HFM10":"H. F. MAIZ KG","HFM800":"H. F. MAIZ KG","HFMPAP":"H. F. MAIZ KG","HLLAF":"HARINILLA KG","HLLAFGRA":"HARINILLA KG","HLLAG":"HARINILLA KG","HLLAGGRA":"HARINILLA KG","HZ":"ZOOTECNICA KG","HZGRA":"ZOOTECNICA KG","RACION":"HARINA 25KG","S800":"GRITZ SEMOL KG","SALVADO":"HARINILLA KG","SEMOL":"GRITZ SEMOL KG","SEMOL800":"GRITZ SEMOL KG","SEMOLGRA":"GRITZ SEMOL KG","GRITZGR10":"GRITZ SEMOL KG","HLLAG20":"HARINILLA KG","SEMOLP":"GRITZ SEMOL KG"});
 // Formatea RUT chileno de forma tolerante: acepta puntos/guion,
 // conserva textos no numéricos y evita romper los campos mientras se escribe.
 function formatRut(value){
@@ -142,7 +144,7 @@ function deriveExistenceIneClient(base){
   const byFam=new Map(fams.map(f=>[f,{name:f,kg:0,neto:0,rows:0,sources:new Set()}]));
   const rows=Array.isArray(base?.detailRows)?base.detailRows:[], missing=[]; let formulaRows=0,zeroRows=0;
   for(const r of rows){
-    const fam=String(r?.family||'').trim().toUpperCase(), kg=n(r?.salida); if(!kg)continue;
+    const code=String(r?.code||'').trim().toUpperCase(); const fam=(String(r?.family||'').trim().toUpperCase()||REGISTRO_CODE_FAMILY_CLIENT[code]||''); const kg=n(r?.salida); if(!kg)continue;
     const z=byFam.get(fam); if(!z){missing.push({code:r?.code||'',name:r?.name||'',kg,reason:'familia no reconocida'});continue;}
     const fx=applyFixedMasterFormulaClient(r); z.kg+=kg; z.neto+=fx.AR; z.rows++; formulaRows++; if(fx.AQ===0)zeroRows++;
     z.sources.add(fx.doc===MAESTRO_DOC_TYPES_CLIENT.receipt?'AQ=AN(VLOOKUP P.BOLETA)':((fx.doc===MAESTRO_DOC_TYPES_CLIENT.invoice||fx.doc===MAESTRO_DOC_TYPES_CLIENT.ticket)?'AQ=AJ(Valor Movto)':'AQ=0(Doc no contemplado)'));
@@ -161,33 +163,59 @@ function svgBarChart(items){const max=Math.max(1,...items.map(x=>x.neto)),w=900,
 function svgLineChart(months){months=(Array.isArray(months)?months:[]).filter(x=>['ventas','ventas-maestro'].includes(x?.quality?.sourceType));if(months.length<2)return `<div class="chartEmpty">Sube al menos dos meses para ver la tendencia del promedio.</div>`;const vals=months.map(x=>x.totalPromedio),min=Math.min(...vals),max=Math.max(...vals),w=900,h=260,p=40,pts=months.map((x,i)=>{const px=p+(w-2*p)*(i/(months.length-1)),py=h-p-(h-2*p)*((x.totalPromedio-min)/(max-min||1));return [px,py,x]});return `<svg class="ineChart" viewBox="0 0 ${w} ${h}" role="img" aria-label="Tendencia del promedio INE"><line x1="${p}" y1="${h-p}" x2="${w-p}" y2="${h-p}" class="chartAxis"/><polyline points="${pts.map(a=>a[0]+','+a[1]).join(' ')}" class="chartLine"/>${pts.map(([x,y,m])=>`<circle cx="${x}" cy="${y}" r="5" class="chartDot"></circle><text x="${x}" y="${h-12}" text-anchor="middle" class="chartLabel">${esc(m.periodo.split(' ')[0])}</text><text x="${x}" y="${y-10}" text-anchor="middle" class="chartValue">$${dec(m.totalPromedio)}</text>`).join('')}</svg>`}
 function canonicalExistenceRows(rows){
   const src=Array.isArray(rows)?rows:[];
-  return src.filter(r=>r && typeof r==='object').map(r=>({
-    name:String(r.name??r.item??r.ITEM??'').trim(),
-    code:String(r.code??r.codigo??r.CODIGO??'').trim(),
-    item:String(r.item??r.name??r.ITEM??'').trim(),
-    family:String(r.family??'').trim(),
-    disponible:n(r.disponible??r.totalDisponible??r['Total Disponible']??0),
-    disponible$:n(r['disponible$']??r.disponible$??r.totalDisponible$??r['Total Disponible$']??0),
-    saldoAnterior:n(r.saldoAnterior??r['Saldo anterior']??0),
-    saldoAnterior$:n(r.saldoAnterior$??r['Saldo anterior$']??0),
-    reservas:n(r.reservas??r['Reservas']??0),
-    consignacion:n(r.consignacion??r['Consignación']??0),
-    transitoria:n(r.transitoria??r['Transitoria']??0),
-    totalValorizado$:n(r.totalValorizado$??r['Total Valorizado$']??0),
-    fuente:String(r.fuente??r.source??'').trim()
-  }));
+  return src.filter(r=>r && typeof r==='object').map(r=>{
+    const code=String(r.code??r.codigo??r.CODIGO??'').trim().toUpperCase();
+    const fallbackFamily=REGISTRO_CODE_FAMILY_CLIENT[code]||'';
+    return {
+      name:String(r.name??r.item??r.ITEM??'').trim(),
+      code,
+      item:String(r.item??r.name??r.ITEM??'').trim(),
+      family:String(r.family??fallbackFamily).trim()||fallbackFamily,
+      disponible:n(r.disponible??r.totalDisponible??r['Total Disponible']??0),
+      disponible$:n(r['disponible$']??r.disponible$??r.totalDisponible$??r['Total Disponible$']??0),
+      saldoAnterior:n(r.saldoAnterior??r['Saldo anterior']??0),
+      saldoAnterior$:n(r.saldoAnterior$??r['Saldo anterior$']??0),
+      reservas:n(r.reservas??r['Reservas']??0),
+      consignacion:n(r.consignacion??r['Consignación']??0),
+      transitoria:n(r.transitoria??r['Transitoria']??0),
+      totalValorizado$:n(r.totalValorizado$??r['Total Valorizado$']??0),
+      fuente:String(r.fuente??r.source??'').trim()
+    };
+  });
+}
+
+function canonicalExistenceDetailRows(rows){
+  const src=Array.isArray(rows)?rows:[];
+  return src.filter(r=>r&&typeof r==='object').map(r=>{
+    const code=String(r.code??r.codigo??r.CODIGO??'').trim().toUpperCase();
+    const family=String(r.family??REGISTRO_CODE_FAMILY_CLIENT[code]??'').trim().toUpperCase();
+    return {...r,code,family};
+  });
+}
+
+function normalizeExistencePeriodKey(base){
+  const raw=String(base?.key||base?.periodKey||'').trim();
+  if(/^\d{4}-\d{2}$/.test(raw)) return raw;
+  const p=String(base?.periodo||'').trim().toLowerCase();
+  const y=(p.match(/\d{4}/)||[])[0]||'';
+  const months={enero:'01',febrero:'02',marzo:'03',abril:'04',mayo:'05',junio:'06',julio:'07',agosto:'08',septiembre:'09',setiembre:'09',octubre:'10',noviembre:'11',diciembre:'12'};
+  const found=Object.entries(months).find(([k])=>p.includes(k));
+  if(y&&found) return `${y}-${found[1]}`;
+  const q=raw.match(/(\d{4})[-\/](\d{1,2})/); if(q)return `${q[1]}-${String(parseInt(q[2],10)).padStart(2,'0')}`;
+  return raw;
 }
 
 function entryFromExistenceBase(base){
-  if(!base?.key)return null;
-  const rows=canonicalExistenceRows(base.summaryRows||[]), detail=Array.isArray(base.detailRows)?base.detailRows:[];
+  const fixedKey=normalizeExistencePeriodKey(base);
+  if(!fixedKey)return null;
+  const rows=canonicalExistenceRows(base.summaryRows||[]), detail=canonicalExistenceDetailRows(base.detailRows||[]);
   const totalNeto=rows.reduce((a,x)=>a+n(x.disponible$),0), totalKg=rows.reduce((a,x)=>a+n(x.disponible),0);
   const items=orderIneItems((base.familyItems&&base.familyItems.length?base.familyItems:[]).map(x=>{const neto=n(x.neto),kg=n(x.kg);return {...x,neto,kg,promedio:null,stockUnitValue:kg?neto/kg:0};}));
   const netoHarinas=items.slice(0,3).reduce((a,x)=>a+x.neto,0),kgHarinas=items.slice(0,3).reduce((a,x)=>a+x.kg,0);
-  const checksum=hashText(JSON.stringify({key:base.key,periodo:base.periodo,summaryRows:rows,detailCount:detail.length}));
+  const checksum=hashText(JSON.stringify({key:fixedKey,periodo:base.periodo,summaryRows:rows,detailCount:detail.length}));
   const recalculatedIne=deriveExistenceIneClient(base);const derivedIne=recalculatedIne;
   for(const x of items){x.stockUnitValue=x.kg?x.neto/x.kg:0;x.promedio=null;}
-  return {key:String(base.key||base.periodKey||''),periodo:base.periodo||base.key,fileName:base.fileName||'',uploadedAt:base.uploadedAt||Date.now(),sourceName:base.sourceSheet||'Registro de Existencia',items,totalNeto,totalKg,totalPromedio:null,totalStockUnitValue:totalKg?totalNeto/totalKg:0,netoHarinas,kgHarinas,promedioHarinas:null,stockUnitValueHarinas:kgHarinas?netoHarinas/kgHarinas:0,derivedIne,inventory:{saldoAnterior:rows.reduce((a,x)=>a+x.saldoAnterior,0),saldoAnterior$:rows.reduce((a,x)=>a+x.saldoAnterior$,0),entradaKg:detail.reduce((a,x)=>a+n(x.entrada),0),salidaKg:detail.reduce((a,x)=>a+n(x.salida),0),entrada$:detail.reduce((a,x)=>a+n(x.entrada$),0),salida$:detail.reduce((a,x)=>a+n(x.salida$),0),disponibleKg:totalKg,disponible$:totalNeto,reservasKg:rows.reduce((a,x)=>a+x.reservas,0),consignacionKg:rows.reduce((a,x)=>a+x.consignacion,0),transitoriaKg:rows.reduce((a,x)=>a+x.transitoria,0),totalValorizado$:rows.reduce((a,x)=>a+x.totalValorizado$,0)},quality:{...(base.quality||{}),sourceType:'existencia',databaseSource:'IndexedDB/existenceBase',baseVersion:Number(base.baseVersion||3),recordCountSummary:rows.length,recordCountDetail:detail.length,sourceSheet:base.sourceSheet||'',checksum:base.checksum||checksum,checksumCurrent:checksum,integrityOk:!base.checksum||base.checksum===checksum,rebuiltFromDatabase:true,usedForIne:true,derivedSource:derivedIne?.available?'FORMULA_MAESTRO_APLICADA_AL_REGISTRO':'N/D'}}
+  return {key:fixedKey,periodo:base.periodo||fixedKey,fileName:base.fileName||'',uploadedAt:base.uploadedAt||Date.now(),sourceName:base.sourceSheet||'Registro de Existencia',items,totalNeto,totalKg,totalPromedio:null,totalStockUnitValue:totalKg?totalNeto/totalKg:0,netoHarinas,kgHarinas,promedioHarinas:null,stockUnitValueHarinas:kgHarinas?netoHarinas/kgHarinas:0,derivedIne,inventory:{saldoAnterior:rows.reduce((a,x)=>a+x.saldoAnterior,0),saldoAnterior$:rows.reduce((a,x)=>a+x.saldoAnterior$,0),entradaKg:detail.reduce((a,x)=>a+n(x.entrada),0),salidaKg:detail.reduce((a,x)=>a+n(x.salida),0),entrada$:detail.reduce((a,x)=>a+n(x.entrada$),0),salida$:detail.reduce((a,x)=>a+n(x.salida$),0),disponibleKg:totalKg,disponible$:totalNeto,reservasKg:rows.reduce((a,x)=>a+x.reservas,0),consignacionKg:rows.reduce((a,x)=>a+x.consignacion,0),transitoriaKg:rows.reduce((a,x)=>a+x.transitoria,0),totalValorizado$:rows.reduce((a,x)=>a+x.totalValorizado$,0)},quality:{...(base.quality||{}),sourceType:'existencia',databaseSource:'IndexedDB/existenceBase',baseVersion:Number(base.baseVersion||3),recordCountSummary:rows.length,recordCountDetail:detail.length,sourceSheet:base.sourceSheet||'',checksum:base.checksum||checksum,checksumCurrent:checksum,integrityOk:!base.checksum||base.checksum===checksum,rebuiltFromDatabase:true,usedForIne:true,derivedSource:derivedIne?.available?'FORMULA_MAESTRO_APLICADA_AL_REGISTRO':'N/D'}}
 }
 
 function masterIneReferenceForPeriod(key){
@@ -206,7 +234,17 @@ function masterIneReferenceForPeriod(key){
     const snapKey=ineMonthKey(snap.periodo);
     if(snapKey===want && ['ventas-maestro','ventas'].includes(snap.quality?.sourceType||'ventas-maestro')) candidates.push({...snap,key:snapKey,sourceName:state.snapshot?.fileName||'Maestro activo',fileName:state.snapshot?.fileName||''});
   }
-  if(!candidates.length)return null;
+  if(!candidates.length){
+    const catalog=INE_FORMULA_CATALOG_CLIENT[want];
+    if(catalog?.items){
+      const items=orderIneItems(Object.entries(catalog.items).map(([name,v])=>({name,neto:n(v?.referenceNeto),kg:n(v?.referenceKg),promedio:n(v?.avg),vn:0,kgp:0})));
+      const totalNeto=n(catalog.totalNeto), totalKg=n(catalog.totalKg);
+      const netoHarinas=n(catalog.harinasNeto), kgHarinas=n(catalog.harinasKg);
+      items.forEach(x=>{x.vn=divideSafe(x.neto,totalNeto);x.kgp=divideSafe(x.kg,totalKg)});
+      return {key:want,periodo:want,fileName:'Excel Maestro · catálogo validado',sourceName:'Maestro embebido',items,totalNeto,totalKg,totalPromedio:divideSafe(totalNeto,totalKg),netoHarinas,kgHarinas,promedioHarinas:divideSafe(netoHarinas,kgHarinas),formulaProfile:null,source:'MAESTRO_EXACTO_MISMO_PERIODO'};
+    }
+    return null;
+  }
   const ref=candidates[candidates.length-1];
   return {key:want,periodo:ref.periodo||want,fileName:ref.fileName||ref.sourceName||'Excel Maestro',items:orderIneItems(ref.items||[]),totalPromedio:n(ref.totalPromedio),promedioHarinas:n(ref.promedioHarinas),formulaProfile:ref.quality?.masterFormulaProfile||null};
 }
@@ -282,7 +320,7 @@ async function persistExistenceBaseRecord(base){if(!base?.key)return null;let db
 function normalizeExistenceBase(row){
   const base=row?.existenceBase||row;
   if(!base?.key)return null;
-  return {...base,key:base.key,periodKey:base.periodKey||base.key,baseVersion:Number(base.baseVersion||base.version||3),version:3,checksum:base.checksum||'',sourceSheet:base.sourceSheet||row?.sourceName||'',recordCountSummary:Array.isArray(base.summaryRows)?base.summaryRows.length:0,recordCountDetail:Array.isArray(base.detailRows)?base.detailRows.length:0};
+  const fixedKey=normalizeExistencePeriodKey(base); return {...base,key:fixedKey,periodKey:fixedKey,baseVersion:Number(base.baseVersion||base.version||3),version:3,checksum:base.checksum||'',sourceSheet:base.sourceSheet||row?.sourceName||'',recordCountSummary:Array.isArray(base.summaryRows)?base.summaryRows.length:0,recordCountDetail:Array.isArray(base.detailRows)?base.detailRows.length:0};
 }
 async function mergeExistenceRecord(row){
   if(!row?.key)throw new Error('El Registro de Existencia no tiene un período identificable.');
@@ -343,7 +381,7 @@ function renderExistencias(){
 
 function exactIneForExistenceDisplay(m){
   if(m?.quality?.sourceType!=='existencia') return m||null;
-  const key=ineMonthKey(m?.periodo||'');
+  const key=String(m?.key||ineMonthKey(m?.periodo||'')||'').trim();
   const ref=masterIneReferenceForPeriod(key);
   if(ref?.items?.length){
     const items=orderIneItems(ref.items||[]);
@@ -652,7 +690,7 @@ setupDispatchClientAutocomplete(clients);$('dQty').oninput=updateDispatchKgFromQ
 function renderGuides(){const rows=state.snapshot?.guides||[];$('content').innerHTML=`<div class="card"><div class="sectionTitle"><div><h3>🧻 Guías</h3><div class="note">Busca folio, RUT o receptor sin reconstruir el módulo.</div></div><div class="toolbar"><input id="guideQ" class="searchInput grow" placeholder="Buscar folio, RUT o receptor" value="${esc(state.search.guides||'')}"><button class="secondary" type="button" id="guideClear">Limpiar</button><button class="secondary" type="button" id="guideCsv">⬇️ Exportar CSV</button></div></div><p class="note" id="guideCount"></p><div class="tableWrap"><table class="table"><thead><tr><th>Folio</th><th>Fecha</th><th>Estado</th><th>Operación</th><th>RUT</th><th>Receptor</th><th>Neto</th><th>IVA</th><th>Total</th><th>Ref.</th></tr></thead><tbody id="guideBody"></tbody></table></div><div id="guidePager"></div></div>`;refreshGuidesResults();let t;const q=$('guideQ');q.oninput=e=>{const v=e.target.value;state.search.guides=v;state.page=1;clearTimeout(t);t=setTimeout(refreshGuidesResults,120)};$('guideClear').onclick=()=>{state.search.guides='';state.page=1;renderGuides()};$('guideCsv').onclick=()=>window.exportGuides()}
 function renderNC(){const rows=state.snapshot?.nc||[];$('content').innerHTML=`<div class="card"><h3>📝 NC / ND</h3><p class="muted">Notas de crédito/débito detectadas desde LIBRO y CUADRE FIN DE MES.</p>${table(['fuente','folio','fecha','tipo','neto','iva','total'],rows.map(x=>({...x,fecha:safeDate(x.fecha),neto:'$ '+money(x.neto),iva:'$ '+money(x.iva),total:'$ '+money(x.total)})))}</div>`}
 function renderIva(){const i=state.snapshot?.metrics?.iva||emptySnap().metrics.iva;$('content').innerHTML=`<div class="card"><h3>💰 IVA</h3><div class="kpiRow"><div class="kpi"><small>NETO DOCUMENTAL</small><b>$ ${money(i.neto)}</b></div><div class="kpi"><small>IVA</small><b>$ ${money(i.iva)}</b></div><div class="kpi"><small>TOTAL</small><b>$ ${money(i.total)}</b></div><div class="kpi"><small>DOCUMENTOS</small><b>${i.docs.toLocaleString('es-CL')}</b></div></div></div>`}
-async function runHealthCheck(){const checks=[];const add=(name,ok,detail)=>checks.push({name,ok,detail});add('Motor de navegación',typeof show==='function','Módulos registrados');add('Formateo RUT',typeof formatRut==='function'&&formatRut('184467267')==='18.446.726-7','Formato chileno');add('Maestro activo',!!state.snapshot, state.snapshot?.fileName||'No hay Maestro cargado');add('Clientes',!!state.snapshot&&Array.isArray(state.snapshot.clients),`${state.snapshot?.clients?.length||0} registros`);add('Facturas',!!state.snapshot&&Array.isArray(state.snapshot.invoices),`${state.snapshot?.invoices?.length||0} registros`);add('Boletas con detalle',!!state.snapshot&&Array.isArray(state.snapshot.boletas),`${state.snapshot?.boletas?.length||0} registros`);add('Guías',!!state.snapshot&&Array.isArray(state.snapshot.guides),`${state.snapshot?.guides?.length||0} registros`);add('Historial INE',Array.isArray(state.ineMonths),`${state.ineMonths.length} meses guardados`);add('Registros de existencia',Array.isArray(state.existenceRecords),`${state.existenceRecords.length} registros guardados`);add('Base de datos de existencias',Array.isArray(state.existenceBaseRecords),`${state.existenceBaseRecords.length} registros base`);add('Integridad base de existencias',state.existenceBaseRecords.every(x=>{const rebuilt=entryFromExistenceBase(x);return !!rebuilt&&rebuilt.quality?.integrityOk!==false&&Math.abs((rebuilt.totalNeto||0)-(x.summaryRows||[]).reduce((a,r)=>a+n(r.disponible$),0))<0.000001}),`${state.existenceBaseRecords.filter(x=>entryFromExistenceBase(x)?.quality?.integrityOk!==false).length}/${state.existenceBaseRecords.length} bases coherentes`);add('Maestro mensual por BASE DE DATOS',!!state.snapshot?.masterIneByPeriod&&Object.keys(state.snapshot.masterIneByPeriod).length>0,`${Object.keys(state.snapshot?.masterIneByPeriod||{}).length} períodos calculados`);add('Separación stock/Promedio INE',state.existenceRecords.filter(x=>x?.quality?.sourceType==='existencia').every(x=>x.totalPromedio==null&&x.promedioHarinas==null&&(x.items||[]).every(i=>i.promedio==null)), 'Existencia no contiene PROMEDIO INE; usa solo valor unitario stock');add('Fórmula Maestro fija',state.existenceRecords.filter(x=>x?.quality?.sourceType==='existencia'&&x?.derivedIne?.available).every(x=>x?.derivedIne?.formulaSource==='MAESTRO_FORMULA_FIJA'), 'AJ/AM/AN → AQ → AR y pauta D/E/F, sin perfiles mensuales');add('Reconciliación Maestro/Existencia',state.existenceRecords.filter(x=>x?.quality?.sourceType==='existencia'&&x?.derivedIne?.audit?.sourceReconciliation).every(x=>x.derivedIne.audit.sourceReconciliation.status!=='ERROR'), 'Detecta diferencias de fuente sin alterar el informe gerencial.');try{const db=await idb();const required=[STORE_META,STORE_PARTS,STORE_INE,STORE_EXISTENCE,STORE_EXISTENCE_BASE,STORE_AUDIT,STORE_SETTINGS,STORE_DISPATCH];add('IndexedDB V46.5',required.every(x=>db.objectStoreNames.contains(x)),'Almacenamiento estructurado activo');db.close()}catch(e){add('IndexedDB V46.5',false,e.message||String(e))}return checks}
+async function runHealthCheck(){const checks=[];const add=(name,ok,detail)=>checks.push({name,ok,detail});add('Motor de navegación',typeof show==='function','Módulos registrados');add('Hash runtime',typeof hashText==='function','Integridad local');add('Mapa códigos INE',Object.keys(REGISTRO_CODE_FAMILY_CLIENT).length>=30,`${Object.keys(REGISTRO_CODE_FAMILY_CLIENT).length} códigos mapeados`);add('Formateo RUT',typeof formatRut==='function'&&formatRut('184467267')==='18.446.726-7','Formato chileno');add('Maestro activo',!!state.snapshot, state.snapshot?.fileName||'No hay Maestro cargado');add('Clientes',!!state.snapshot&&Array.isArray(state.snapshot.clients),`${state.snapshot?.clients?.length||0} registros`);add('Facturas',!!state.snapshot&&Array.isArray(state.snapshot.invoices),`${state.snapshot?.invoices?.length||0} registros`);add('Boletas con detalle',!!state.snapshot&&Array.isArray(state.snapshot.boletas),`${state.snapshot?.boletas?.length||0} registros`);add('Guías',!!state.snapshot&&Array.isArray(state.snapshot.guides),`${state.snapshot?.guides?.length||0} registros`);add('Historial INE',Array.isArray(state.ineMonths),`${state.ineMonths.length} meses guardados`);add('Registros de existencia',Array.isArray(state.existenceRecords),`${state.existenceRecords.length} registros guardados`);add('Base de datos de existencias',Array.isArray(state.existenceBaseRecords),`${state.existenceBaseRecords.length} registros base`);add('Integridad base de existencias',state.existenceBaseRecords.every(x=>{const rebuilt=entryFromExistenceBase(x);return !!rebuilt&&rebuilt.quality?.integrityOk!==false&&Math.abs((rebuilt.totalNeto||0)-(x.summaryRows||[]).reduce((a,r)=>a+n(r.disponible$),0))<0.000001}),`${state.existenceBaseRecords.filter(x=>entryFromExistenceBase(x)?.quality?.integrityOk!==false).length}/${state.existenceBaseRecords.length} bases coherentes`);add('Maestro mensual por BASE DE DATOS',!!state.snapshot?.masterIneByPeriod&&Object.keys(state.snapshot.masterIneByPeriod).length>0,`${Object.keys(state.snapshot?.masterIneByPeriod||{}).length} períodos calculados`);add('Separación stock/Promedio INE',state.existenceRecords.filter(x=>x?.quality?.sourceType==='existencia').every(x=>x.totalPromedio==null&&x.promedioHarinas==null&&(x.items||[]).every(i=>i.promedio==null)), 'Existencia no contiene PROMEDIO INE; usa solo valor unitario stock');add('Fórmula Maestro fija',state.existenceRecords.filter(x=>x?.quality?.sourceType==='existencia'&&x?.derivedIne?.available).every(x=>x?.derivedIne?.formulaSource==='MAESTRO_FORMULA_FIJA'), 'AJ/AM/AN → AQ → AR y pauta D/E/F, sin perfiles mensuales');add('Reconciliación Maestro/Existencia',state.existenceRecords.filter(x=>x?.quality?.sourceType==='existencia'&&x?.derivedIne?.audit?.sourceReconciliation).every(x=>x.derivedIne.audit.sourceReconciliation.status!=='ERROR'), 'Detecta diferencias de fuente sin alterar el informe gerencial.');try{const db=await idb();const required=[STORE_META,STORE_PARTS,STORE_INE,STORE_EXISTENCE,STORE_EXISTENCE_BASE,STORE_AUDIT,STORE_SETTINGS,STORE_DISPATCH];add('IndexedDB V46.5',required.every(x=>db.objectStoreNames.contains(x)),'Almacenamiento estructurado activo');db.close()}catch(e){add('IndexedDB V46.5',false,e.message||String(e))}return checks}
 function renderAdmin(){$('content').innerHTML=`<div class="card"><div class="sectionTitle"><div><h3>⚙️ Administración</h3><div class="note">Control técnico y operativo de Molino Control.</div></div><span class="pill">V48.4 · OFFLINE-FIRST</span></div><div class="infoGrid"><div class="info"><small>Usuario</small><b>${esc(state.user)}</b></div><div class="info"><small>Rol</small><b>${state.role}</b></div><div class="info"><small>Maestro activo</small><b>${esc(state.snapshot?.fileName||'Sin cargar')}</b></div><div class="info"><small>Hojas</small><b>${state.snapshot?.sheets?.length||0}</b></div><div class="info"><small>Meses INE</small><b>${state.ineMonths.length}</b></div><div class="info"><small>Registros existencia</small><b>${state.existenceRecords.length}</b></div><div class="info"><small>Base existencia</small><b>${state.existenceBaseRecords.length}</b></div><div class="info"><small>Persistencia</small><b>IndexedDB V46</b></div></div><div class="toolbar" style="margin-top:14px"><button class="secondary" type="button" onclick="show('maestro')">📥 Administrar Maestro</button><button class="secondary" type="button" onclick="show('private')">📊 Indicadores privados</button><button class="ghost" type="button" id="healthBtn">🛡️ Probar integridad</button><button class="danger" type="button" onclick="logout()">🚪 Cerrar sesión</button></div><div id="healthResult" style="margin-top:14px"></div></div>`;$('healthBtn').onclick=async()=>{const host=$('healthResult');host.innerHTML='<div class="status info">Ejecutando pruebas de integridad…</div>';const checks=await runHealthCheck();host.innerHTML=`<div class="healthGrid">${checks.map(c=>`<div class="healthItem ${c.ok?'ok':'bad'}"><strong>${c.ok?'✓':'✕'} ${esc(c.name)}</strong><span>${esc(c.detail||'')}</span></div>`).join('')}</div><div class="status ${checks.every(c=>c.ok)?'ok':'warn'}"><b>${checks.every(c=>c.ok)?'Sistema listo':'Hay puntos que requieren revisión'}</b> · ${checks.filter(c=>c.ok).length}/${checks.length} pruebas correctas.</div>`}}
 const STORE_META='meta',STORE_PARTS='parts',STORE_INE='ineMonths',STORE_EXISTENCE='existenceRecords',STORE_EXISTENCE_BASE='existenceBase',STORE_AUDIT='audit',STORE_SETTINGS='settings',STORE_DISPATCH='dispatches',CHUNK_SIZE=1500;
 function deriveBoletasFromDocuments(documents){const map=new Map();for(const d of (documents||[])){if(!/BOLETA|\bBT\b/i.test(String(d.tipo||'')))continue;const key=String(d.folio||'').trim();if(!key)continue;if(!map.has(key))map.set(key,{folio:key,fecha:d.fecha||'',cliente:d.cliente||'',rut:d.rut||'',items:[],lineas:0,kg:0,sacos:0,neto:0,iva:0,total:0,fuente:d.fuente||'LIBRO',estado:d.estado||''});const b=map.get(key);if(d.producto||d.detalle)b.items.push({producto:d.producto||'',detalle:d.detalle||'',unidad:d.unidad||'',kg:n(d.kg),sacos:n(d.sacos),cantidad:n(d.sacos)||n(d.kg)});b.lineas++;b.kg+=n(d.kg);b.sacos+=n(d.sacos);b.neto+=n(d.neto);b.iva+=n(d.iva);b.total+=n(d.total);if(!b.cliente&&d.cliente)b.cliente=d.cliente;if(!b.rut&&d.rut)b.rut=d.rut;if(!b.fecha&&d.fecha)b.fecha=d.fecha}return [...map.values()].sort((a,b)=>String(b.fecha||'').localeCompare(String(a.fecha||''))||String(b.folio).localeCompare(String(a.folio),'es',{numeric:true}))}
