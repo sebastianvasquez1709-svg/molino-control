@@ -25,7 +25,7 @@ async function parseXlsx(buf){const z=await unzipEntries(buf),get=async name=>z.
   // según cómo se haya creado/copied el libro. La lógica de negocio es la misma.
   const normSheetName = v => String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
   const targets=new Set(['BASE DE DATOS','INE (2)','NESTLE SACOS','NESTLE Y CPW','LIBRO','GUIAS'].map(normSheetName));
-  const baseKeep=new Set([0,1,2,9,13,14,15,17,20,27,28,29,30,31,35,39,40,42,43,44,45,46,47,48,49,50]);
+  const baseKeep=new Set([0,1,2,9,13,14,15,17,18,20,27,28,29,30,31,35,39,40,42,43,44,45,46,47,48,49,50]);
   const sheets=[];
   for(const m of wb.match(/<sheet\b[^>]*>/gi)||[]){const name=attr(m,'name'),rid=attr(m,'r:id')||attr(m,'id');let target=relMap[rid]||'';target=target.replace(/^\.\//,'');target=target.replace(/^\/+/, '').replace(/^\.\//,'');if(!target.startsWith('xl/'))target='xl/'+target;let rows=[];
     if(target&&z.has(target)){
@@ -231,7 +231,7 @@ self.onmessage = async (e) => {
 
     // V48.0: FÓRMULA MAESTRO FIJA PARA CUALQUIER REGISTRO DE EXISTENCIA.
     // Copia literal de la cadena operativa del BASE DE DATOS del Maestro:
-    // AJ = IF(OR(N=CODIGOS!K2,N=CODIGOS!K4,N=NOTA DE CREDITO),S,0)
+    // AJ = IF(OR(N=CODIGOS!K2,N=CODIGOS!K4),S,0)
     // AM = IF(N=CODIGOS!K3,S," ")
     // AN = IFERROR(VLOOKUP(AM,CODIGOS!R16:S111,2,0),0)
     // AQ = AJ + AN
@@ -246,6 +246,8 @@ self.onmessage = async (e) => {
       if(!Number.isFinite(x)) return String(v??'').trim();
       return String(x);
     };
+    const normalizeFolioKey = (v) => { const x=Number(v); return Number.isFinite(x)?String(Number.isInteger(x)?x:x):String(v??'').trim(); };
+    const masterTxKey = (r,idx) => [norm(idx?.code!=null?r[idx.code]:''),String(idx?.doc!=null?r[idx.doc]??'':'').trim(),normalizeFolioKey(idx?.folio!=null?r[idx.folio]:'')].join('|');
     const applyFixedMasterFormula = (row={}) => {
       const doc = String(row.docto ?? row.tipoDocumento ?? '').trim();
       const s = Number(row.valorMovto);
@@ -253,7 +255,7 @@ self.onmessage = async (e) => {
       const mov = Number.isFinite(s) ? s : 0;
       const kg = Number.isFinite(u) ? u : 0;
       // AJ: solo Factura[FT] y Guía[ST] toman directamente Valor Movto.
-      const aj = (doc===MAESTRO_DOC_TYPES.invoice || doc===MAESTRO_DOC_TYPES.ticket || doc==='NOTA DE CREDITO') ? mov : 0;
+      const aj = (doc===MAESTRO_DOC_TYPES.invoice || doc===MAESTRO_DOC_TYPES.ticket) ? mov : 0;
       // AM: para Boleta[BT] usa Valor Movto como clave de la tabla P.BOLETA.
       const am = doc===MAESTRO_DOC_TYPES.receipt ? mov : null;
       const an = am===null ? 0 : (Number(MAESTRO_BOLETA_LOOKUP[normalizeMovtoKey(am)]) || 0);
@@ -281,24 +283,47 @@ self.onmessage = async (e) => {
       const agg=new Map(INE_FAMILIES.map(name=>[name,{name,kg:0,neto:0,rows:0,codes:new Set(),sources:new Set(),formulaRows:0}]));
       const unmapped=[];
       let formulaAppliedRows=0, formulaZeroRows=0;
+      const masterRef=runtimeCatalog?.[key]||null;
+      const masterTx=masterRef?.transactionIndex||{};
+      const registerTx={};
       for(const r of (detailRows||[])){
-        const fam=String(r?.family||'').trim().toUpperCase();
-        const kg=n(r?.salida);
-        if(!kg) continue;
+        const fam=String(r?.family||'').trim().toUpperCase(); const kg=n(r?.salida); if(!kg) continue;
         if(!agg.has(fam)){unmapped.push({code:r?.code||'',name:r?.name||'',docto:r?.docto||'',kg,reason:'familia no reconocida'});continue;}
-        const z=agg.get(fam);
-        const fx=applyFixedMasterFormula(r);
-        z.kg+=kg; z.neto+=fx.AR; z.rows++; z.formulaRows++;
+        const z=agg.get(fam); const fx=applyFixedMasterFormula(r); z.kg+=kg; z.neto+=fx.AR; z.rows++; z.formulaRows++;
         const code=String(r?.code||'').trim().toUpperCase(); if(code)z.codes.add(code);
         z.sources.add(fx.doc===MAESTRO_DOC_TYPES.receipt?'AQ=AN(VLOOKUP P.BOLETA)':((fx.doc===MAESTRO_DOC_TYPES.invoice||fx.doc===MAESTRO_DOC_TYPES.ticket)?'AQ=AJ(Valor Movto)':'AQ=0(Doc no contemplado)'));
-        formulaAppliedRows++;
-        if(fx.AQ===0) formulaZeroRows++;
+        formulaAppliedRows++; if(fx.AQ===0)formulaZeroRows++;
+        const txKey=[code,String(r?.docto||'').trim(),normalizeFolioKey(r?.folio)].join('|');
+        if(txKey!=='||') registerTx[txKey]={code,doc:String(r?.docto||'').trim(),folio:normalizeFolioKey(r?.folio),valorMovto:n(r?.valorMovto),salida:kg,neto:fx.AR,family:fam};
       }
       const items=INE_FAMILIES.map(name=>{const z=agg.get(name),kg=z?.kg||0,neto=z?.neto||0;return {name,kg,neto,promedio:kg?neto/kg:null,vn:0,kgp:0,rows:z?.rows||0,formulaAvg:kg?neto/kg:null,referenceKg:null,referenceNeto:null,sourceCodes:[...(z?.codes||[])],formulaSources:[...(z?.sources||[])]};});
-      if(unmapped.length) return {available:false,periodo,key,items,totalKg:items.reduce((a,x)=>a+x.kg,0),totalNeto:items.reduce((a,x)=>a+x.neto,0),netoHarinas:items.slice(0,3).reduce((a,x)=>a+x.neto,0),kgHarinas:items.slice(0,3).reduce((a,x)=>a+x.kg,0),missingReason:'Existen líneas del Registro sin familia INE reconocida.',source:'FORMULA_MAESTRO_FIJA_APLICADA_AL_REGISTRO',formulaSource:'MAESTRO_FORMULA_FIJA',unmapped};
-      const totalKg=items.reduce((a,x)=>a+x.kg,0), totalNeto=items.reduce((a,x)=>a+x.neto,0), netoHarinas=items.slice(0,3).reduce((a,x)=>a+x.neto,0), kgHarinas=items.slice(0,3).reduce((a,x)=>a+x.kg,0);
+      const totalKg=items.reduce((a,x)=>a+x.kg,0),totalNeto=items.reduce((a,x)=>a+x.neto,0),netoHarinas=items.slice(0,3).reduce((a,x)=>a+x.neto,0),kgHarinas=items.slice(0,3).reduce((a,x)=>a+x.kg,0);
+      if(unmapped.length)return {available:false,periodo,key,items,totalKg,totalNeto,netoHarinas,kgHarinas,missingReason:'Existen líneas del Registro sin familia INE reconocida.',source:'FORMULA_MAESTRO_FIJA_APLICADA_AL_REGISTRO',formulaSource:'MAESTRO_FORMULA_FIJA',unmapped};
       items.forEach(x=>{x.vn=totalNeto?x.neto/totalNeto:0;x.kgp=totalKg?x.kg/totalKg:0;});
-      return {available:true,periodo,key,items,totalKg,totalNeto,totalPromedio:divideSafe(totalNeto,totalKg),netoHarinas,kgHarinas,promedioHarinas:divideSafe(netoHarinas,kgHarinas),formula:'AJ=IF(OR(N=Factura[FT],N=Guía[ST],N=NOTA DE CREDITO),S,0); AM=IF(N=Boleta[BT],S," " ); AN=IFERROR(VLOOKUP(AM,CODIGOS!R16:S111,2,0),0); AQ=AJ+AN; AR=AQ*U; D=B/C; E=B/B15; F=C/C15; D15=B15/C15; B18=B7+B8+B9; B19=C7+C8+C9; B20=B18/B19',engineVersion:'V48.0',source:'FORMULA_MAESTRO_FIJA_APLICADA_AL_REGISTRO',sourceDescription:'Fórmula fija copiada del BASE DE DATOS del Maestro. No depende del mes ni de un perfil mensual.',formulaSource:'MAESTRO_FORMULA_FIJA',unmapped:[],audit:{periodKey:key,formulaRows:formulaAppliedRows,formulaZeroRows,documents:MAESTRO_DOC_TYPES,lookupEntries:Object.keys(MAESTRO_BOLETA_LOOKUP).length}};
+      let reconciliation={status:'NO_MASTER_REFERENCE',samePeriodMaster:false,extraTransactions:[],missingTransactions:[],valueDifferences:[],derivedVsMaster:{families:[],total:{},harinas:{}}};
+      if(masterRef){
+        reconciliation.samePeriodMaster=true;
+        for(const txKey of Object.keys(registerTx)) if(!masterTx[txKey]) reconciliation.extraTransactions.push(registerTx[txKey]);
+        for(const txKey of Object.keys(masterTx)) if(!registerTx[txKey]) reconciliation.missingTransactions.push(masterTx[txKey]);
+        for(const txKey of Object.keys(registerTx)){
+          const mr=masterTx[txKey]; const rr=registerTx[txKey]; if(!mr)continue;
+          const diffs={valorMovto:(rr.valorMovto!=null&&mr.valorMovto!=null)?rr.valorMovto-mr.valorMovto:null,salida:rr.salida-mr.salida,neto:rr.neto-mr.neto};
+          if(Math.abs(diffs.salida)>1e-9||Math.abs(diffs.neto)>1e-9)reconciliation.valueDifferences.push({key:txKey,register:rr,master:mr,diff:diffs});
+        }
+        const refItems=Array.isArray(masterRef.items)?masterRef.items:Object.entries(masterRef.items||{}).map(([name,v])=>({name,neto:v?.referenceNeto??v?.neto??0,kg:v?.referenceKg??v?.kg??0,promedio:v?.avg??v?.promedio??0}));
+        const refMap=Object.fromEntries(refItems.map(x=>[String(x.name).toUpperCase(),x]));
+        for(const it of items){const ref=refMap[it.name]||null; reconciliation.derivedVsMaster.families.push({name:it.name,registerNet:it.neto,registerKg:it.kg,masterNet:ref?.neto??null,masterKg:ref?.kg??null,diffNet:ref?it.neto-n(ref.neto):null,diffKg:ref?it.kg-n(ref.kg):null});}
+        reconciliation.derivedVsMaster.total={registerNet:totalNeto,registerKg:totalKg,masterNet:n(masterRef.totalNeto),masterKg:n(masterRef.totalKg),diffNet:totalNeto-n(masterRef.totalNeto),diffKg:totalKg-n(masterRef.totalKg)};
+        reconciliation.derivedVsMaster.harinas={registerNet:netoHarinas,registerKg:kgHarinas,masterNet:n(masterRef.harinasNeto),masterKg:n(masterRef.harinasKg),diffNet:netoHarinas-n(masterRef.harinasNeto),diffKg:kgHarinas-n(masterRef.harinasKg)};
+        const onlyRounding=Math.abs(reconciliation.derivedVsMaster.total.diffNet||0)<=1e-9&&Math.abs(reconciliation.derivedVsMaster.total.diffKg||0)<=1e-9;
+        if(!reconciliation.extraTransactions.length&&!reconciliation.missingTransactions.length&&!reconciliation.valueDifferences.length&&onlyRounding) reconciliation.status='EXACT_MATCH';
+        else if(reconciliation.extraTransactions.length||reconciliation.missingTransactions.length||reconciliation.valueDifferences.length) reconciliation.status='SOURCE_DIFFERENCE';
+        else reconciliation.status='DECIMAL_ONLY';
+        if(reconciliation.status==='SOURCE_DIFFERENCE') reconciliation.message='Las diferencias provienen de movimientos/fuente, no del redondeo. El informe oficial del mismo período usa los datos exactos del Maestro.';
+        else if(reconciliation.status==='DECIMAL_ONLY') reconciliation.message='La diferencia es solo de precisión numérica inferior a la tolerancia; no afecta el valor operativo mostrado.';
+        else if(reconciliation.status==='EXACT_MATCH') reconciliation.message='Registro y Maestro coinciden en movimientos y cálculos para este período.';
+      }
+      return {available:true,periodo,key,items,totalKg,totalNeto,totalPromedio:divideSafe(totalNeto,totalKg),netoHarinas,kgHarinas,promedioHarinas:divideSafe(netoHarinas,kgHarinas),formula:'AJ=IF(OR(N=Factura[FT],N=Guía[ST]),S,0); AM=IF(N=Boleta[BT],S," "); AN=IFERROR(VLOOKUP(AM,CODIGOS!R16:S111,2,0),0); AQ=AJ+AN; AR=AQ*U; D=B/C; E=B/B15; F=C/C15; D15=B15/C15; B18=B7+B8+B9; B19=C7+C8+C9; B20=B18/B19',engineVersion:'V48.2',source:'FORMULA_MAESTRO_FIJA_APLICADA_AL_REGISTRO',sourceDescription:'Fórmula fija copiada del BASE DE DATOS del Maestro. No depende del mes ni de un perfil mensual.',formulaSource:'MAESTRO_FORMULA_FIJA',unmapped:[],audit:{periodKey:key,formulaRows:formulaAppliedRows,formulaZeroRows,documents:MAESTRO_DOC_TYPES,lookupEntries:Object.keys(MAESTRO_BOLETA_LOOKUP).length,sourceReconciliation:reconciliation}};
     };
     const divideSafe=(a,b)=>Math.abs(Number(b)||0)>0?Number(a||0)/Number(b):0;
     const calcIne = (items,periodo,quality={}) => {
@@ -360,17 +385,43 @@ self.onmessage = async (e) => {
     const excelYearFromSerial = v => { const x=Number(v); if(!Number.isFinite(x))return ''; return String(new Date(Date.UTC(1899,11,30)+x*86400000).getUTCFullYear()); };
     const buildMonthlyMasterIne = (baseRows) => {
       const h=(baseRows[0]||[]).map(v=>String(v??'').trim().toUpperCase()),idx={};h.forEach((v,i)=>{if(v)idx[v]=i});
-      const iMes=idx['MES'],iAno=idx['AÑO'],iFecha=idx['FECHA'],iCodigo=idx['CÓDIGO']??idx['CODIGO'],iProducto=idx['PRODUCTO'],iSalida=idx['SALIDA'],iAQ=idx['VALOR PROMEDIO'],iAR=idx['NETO'];if([iMes,iProducto,iSalida].some(v=>v==null))return {};
+      const iMes=idx['MES'],iAno=idx['AÑO'],iFecha=idx['FECHA'],iCodigo=idx['CÓDIGO']??idx['CODIGO'],iProducto=idx['PRODUCTO'],iSalida=idx['SALIDA'],iAQ=idx['VALOR PROMEDIO'],iAR=idx['NETO'],iDoc=idx['DOCTO'],iFolio=idx['FOLIO'],iVal=idx['VALOR MOVTO']??idx['VALORMOVTO'];
+      if([iMes,iProducto,iSalida].some(v=>v==null))return {};
       const acc=new Map();
-      for(const r of baseRows.slice(1)){const mes=String(r?.[iMes]??'').trim().toLowerCase();let anio=String(iAno!=null?r?.[iAno]:'').trim();if(!/^\d{4}$/.test(anio)&&iFecha!=null)anio=excelYearFromSerial(r?.[iFecha]);const mm=MONTHS_ES[mes];if(!mm||!/^\d{4}$/.test(anio))continue;const key=`${anio}-${mm}`;const code=norm(iCodigo!=null?r?.[iCodigo]:'');const fam=ineFamilyByCode(code,iProducto!=null?r?.[iProducto]:'');if(!fam)continue;const kg=n(iSalida!=null?r?.[iSalida]:0),aq=n(iAQ!=null?r?.[iAQ]:0),arCached=n(iAR!=null?r?.[iAR]:0);if(!acc.has(key))acc.set(key,{families:new Map(INE_FAMILIES.map(name=>[name,{name,neto:0,kg:0,rows:0,auditNet:0}])),codes:new Map()});const m=acc.get(key),z=m.families.get(fam),arFormula=aq*kg,neto=(Number.isFinite(arFormula)&&(arFormula!==0||arCached===0))?arFormula:arCached;z.neto+=neto;z.kg+=kg;z.rows++;z.auditNet+=arCached;if(code&&kg>0){if(!m.codes.has(code))m.codes.set(code,{kg:0,weightedAq:0});const c=m.codes.get(code);c.kg+=kg;c.weightedAq+=aq*kg;}}
-      const out={};for(const [key,obj] of acc.entries()){const items=INE_FAMILIES.map(name=>{const x=obj.families.get(name)||{name,neto:0,kg:0,rows:0,auditNet:0};return {name,neto:x.neto,kg:x.kg,promedio:divideSafe(x.neto,x.kg),auditRows:x.rows,auditNetoExcel:x.auditNet};});const calc=calcIne(items,key,{mode:'BASE DE DATOS MENSUAL',sourceType:'ventas-maestro',headerFound:true,missing:[],sourceSheet:'BASE DE DATOS',calculation:'AQ = AJ + AN; AR = AQ * U; PROMEDIO = NETO/KG; VN = NETO/NETO total; KGP = KG/KG total.'});const rateByCode={};for(const [code,c] of obj.codes.entries())rateByCode[code]=c.kg?c.weightedAq/c.kg:null;const audit=[];for(const it of items){const ex=it.auditNetoExcel;if(Math.abs(ex-it.neto)>1e-9)audit.push({name:it.name,excelNeto:ex,formulaNeto:it.neto,diff:it.neto-ex});}calc.quality.masterMonthlyAudit={ok:audit.length===0,differences:audit,sourceColumns:{fecha:iFecha!=null?'L = Fecha':'',mes:'MES',salida:'U = Salida',aq:'AQ = VALOR PROMEDIO = AJ+AN',neto:'AR = NETO = AQ*Salida'}};calc.rateByCode=rateByCode;out[key]=calc;}return out;
+      for(const r of baseRows.slice(1)){
+        const mes=String(r?.[iMes]??'').trim().toLowerCase();
+        let anio=String(iAno!=null?r?.[iAno]:'').trim();
+        if(!/^\d{4}$/.test(anio)&&iFecha!=null)anio=excelYearFromSerial(r?.[iFecha]);
+        const mm=MONTHS_ES[mes]; if(!mm||!/^\d{4}$/.test(anio))continue;
+        const key=`${anio}-${mm}`; const code=norm(iCodigo!=null?r?.[iCodigo]:''); const fam=ineFamilyByCode(code,iProducto!=null?r?.[iProducto]:''); if(!fam)continue;
+        const kg=n(iSalida!=null?r?.[iSalida]:0),aq=n(iAQ!=null?r?.[iAQ]:0),arCached=n(iAR!=null?r?.[iAR]:0);
+        if(!acc.has(key))acc.set(key,{families:new Map(INE_FAMILIES.map(name=>[name,{name,neto:0,kg:0,rows:0,auditNet:0}])),codes:new Map(),tx:new Map()});
+        const m=acc.get(key),z=m.families.get(fam),arFormula=aq*kg,neto=(Number.isFinite(arFormula)&&(arFormula!==0||arCached===0))?arFormula:arCached;
+        z.neto+=neto; z.kg+=kg; z.rows++; z.auditNet+=arCached;
+        if(code&&kg>0){if(!m.codes.has(code))m.codes.set(code,{kg:0,weightedAq:0});const c=m.codes.get(code);c.kg+=kg;c.weightedAq+=aq*kg;}
+        const txKey=[code,String(iDoc!=null?r?.[iDoc]??'':'').trim(),normalizeFolioKey(iFolio!=null?r?.[iFolio]:'')].join('|');
+        if(txKey!=='||')m.tx.set(txKey,{code,doc:String(iDoc!=null?r?.[iDoc]??'':'').trim(),folio:normalizeFolioKey(iFolio!=null?r?.[iFolio]:''),valorMovto:iVal!=null?n(r?.[iVal]):null,salida:kg,neto:neto,family:fam});
+      }
+      const out={};
+      for(const [key,obj] of acc.entries()){
+        const items=INE_FAMILIES.map(name=>{const x=obj.families.get(name)||{name,neto:0,kg:0,rows:0,auditNet:0};return {name,neto:x.neto,kg:x.kg,promedio:divideSafe(x.neto,x.kg),auditRows:x.rows,auditNetoExcel:x.auditNet};});
+        const calc=calcIne(items,key,{mode:'BASE DE DATOS MENSUAL',sourceType:'ventas-maestro',headerFound:true,missing:[],sourceSheet:'BASE DE DATOS',calculation:'AQ = AJ + AN; AR = AQ * U; PROMEDIO = NETO/KG; VN = NETO/NETO total; KGP = KG/KG total.'});
+        const rateByCode={}; for(const [code,c] of obj.codes.entries())rateByCode[code]=c.kg?c.weightedAq/c.kg:null;
+        const audit=[]; for(const it of items){const ex=it.auditNetoExcel;if(Math.abs(ex-it.neto)>1e-9)audit.push({name:it.name,excelNeto:ex,formulaNeto:it.neto,diff:it.neto-ex});}
+        calc.quality.masterMonthlyAudit={ok:audit.length===0,differences:audit,sourceColumns:{fecha:iFecha!=null?'L = Fecha':'',mes:'MES',salida:'U = Salida',aq:'AQ = VALOR PROMEDIO = AJ+AN',neto:'AR = NETO = AQ*Salida'}};
+        calc.rateByCode=rateByCode;
+        calc.transactionIndex=Object.fromEntries(obj.tx.entries());
+        calc.transactionCount=obj.tx.size;
+        out[key]=calc;
+      }
+      return out;
     };
 
     const ine = { totalNeto:0,totalKg:0,totalPromedio:0,netoHarinas:0,kgHarinas:0,promedioHarinas:0,items:[],periodo:'',quality:{mode:'',sourceType:'',headerFound:false,missing:[]},inventory:{saldoAnterior:0,saldoAnterior$:0,entradaKg:0,salidaKg:0,entrada$:0,salida$:0,disponibleKg:0,disponible$:0,reservasKg:0,consignacionKg:0,transitoriaKg:0,totalValorizado$:0} };
 
     const masterIneByPeriod = buildMonthlyMasterIne(bd);
     const runtimeFormulaCatalog = {...(e.data?.formulaCatalog||{})};
-    for (const [key,val] of Object.entries(masterIneByPeriod||{})) runtimeFormulaCatalog[key]={items:Object.fromEntries((val.items||[]).map(x=>[x.name,{referenceKg:n(x.kg),referenceNeto:n(x.neto),avg:n(x.promedio)}])),totalKg:n(val.totalKg),totalNeto:n(val.totalNeto),totalAvg:n(val.totalPromedio),harinasKg:n(val.kgHarinas),harinasNeto:n(val.netoHarinas),harinasAvg:n(val.promedioHarinas),rateByCode:val.rateByCode||{}};
+    for (const [key,val] of Object.entries(masterIneByPeriod||{})) runtimeFormulaCatalog[key]={items:Object.fromEntries((val.items||[]).map(x=>[x.name,{referenceKg:n(x.kg),referenceNeto:n(x.neto),avg:n(x.promedio)}])),totalKg:n(val.totalKg),totalNeto:n(val.totalNeto),totalAvg:n(val.totalPromedio),harinasKg:n(val.kgHarinas),harinasNeto:n(val.netoHarinas),harinasAvg:n(val.promedioHarinas),rateByCode:val.rateByCode||{},transactionIndex:val.transactionIndex||{},transactionCount:Number(val.transactionCount||0)};
     for(const [key,val] of Object.entries(INE_FORMULA_CATALOG_EXTRA||{})) if(!runtimeFormulaCatalog[key])runtimeFormulaCatalog[key]=val;
     for(const [key,val] of Object.entries(INE_FORMULA_CATALOG_SEED||{})) if(!runtimeFormulaCatalog[key])runtimeFormulaCatalog[key]=val;
 
@@ -484,7 +535,7 @@ self.onmessage = async (e) => {
           const headerKey=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9$]+/g,'');
           const header=ir.findIndex(r=>{const u=(r||[]).map(headerKey);return u.includes('INFO')&&u.includes('CODIGO')&&u.includes('ITEM')&&u.includes('TOTALDISPONIBLE')&&(u.some(x=>x.startsWith('TOTALDISPONIBLE'))||u.some(x=>x.startsWith('TOTALFISICO')));});
           if(header>=0){const h=(ir[header]||[]).map(headerKey),idx={};h.forEach((v,i)=>{if(v)idx[v]=i});ine.quality={mode:'Registro de Existencia',sourceType:'existencia',headerFound:true,missing:[],range:range||'',emissionDate:emission?.replace(/^.*?:\s*/,'')||''};const summary=[],detail=[];
-            for(let i=header+1;i<ir.length;i++){const r=ir[i]||[],info=String(r[idx['INFO']]??'').trim(),name=String(r[idx['ITEM']]??'').trim();if(!name)continue;const x={name,code:String(r[idx['CODIGO']]??''),docto:String(r[idx['DOCTO']]??'').trim(),family:'',valorMovto:n(r[idx['VALORMOVTO']]),disponible:n(r[idx['TOTALDISPONIBLE']]),disponible$:n(r[idx['TOTALDISPONIBLE$']]),saldoAnterior:n(r[idx['SALDOANTERIOR']]),saldoAnterior$:n(r[idx['SALDOANTERIOR$']]),entrada:n(r[idx['ENTRADA']]),salida:n(r[idx['SALIDA']]),entrada$:n(r[idx['ENTRADA$']]),salida$:n(r[idx['SALIDA$']]),reservas:n(r[idx['RESERVAS']]),consignacion:n(r[idx['CONSIGNACION']]),transitoria:n(r[idx['TRANSITORIA']]),totalValorizado$:n(r[idx['TOTALVALORIZADO$']])};const mappedFamily=ineFamilyByCode(x.code,x.name);x.family=mappedFamily||'';if(info==='2')summary.push(x);else if(info==='1')detail.push(x)}
+            for(let i=header+1;i<ir.length;i++){const r=ir[i]||[],info=String(r[idx['INFO']]??'').trim(),name=String(r[idx['ITEM']]??'').trim();if(!name)continue;const x={name,code:String(r[idx['CODIGO']]??''),item:String(r[idx['ITEM']]??''),docto:String(r[idx['DOCTO']]??'').trim(),folio:normalizeFolioKey(r[idx['FOLIO']]),fecha:r[idx['FECHA']]??'',family:'',valorMovto:n(r[idx['VALORMOVTO']]),disponible:n(r[idx['TOTALDISPONIBLE']]),disponible$:n(r[idx['TOTALDISPONIBLE$']]),saldoAnterior:n(r[idx['SALDOANTERIOR']]),saldoAnterior$:n(r[idx['SALDOANTERIOR$']]),entrada:n(r[idx['ENTRADA']]),salida:n(r[idx['SALIDA']]),entrada$:n(r[idx['ENTRADA$']]),salida$:n(r[idx['SALIDA$']]),reservas:n(r[idx['RESERVAS']]),consignacion:n(r[idx['CONSIGNACION']]),transitoria:n(r[idx['TRANSITORIA']]),totalValorizado$:n(r[idx['TOTALVALORIZADO$']])};const mappedFamily=ineFamilyByCode(x.code,x.name);x.family=mappedFamily||'';if(info==='2')summary.push(x);else if(info==='1')detail.push(x)}
             const agg=new Map(INE_FAMILIES.map(name=>[name,{name,neto:0,kg:0,sourceCodes:new Set()}])),unmapped=[];
             for(const x of summary){const fam=ineFamilyByCode(x.code,x.name);if(!fam){if(x.disponible||x.disponible$)unmapped.push({code:x.code,name:x.name,kg:x.disponible,neto:x.disponible$});continue}const z=agg.get(fam);z.neto+=x.disponible$;z.kg+=x.disponible;if(x.code)z.sourceCodes.add(x.code)}
             const sourceTotalNeto=summary.reduce((a,x)=>a+x.disponible$,0);
