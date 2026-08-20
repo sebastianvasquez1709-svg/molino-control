@@ -1,7 +1,7 @@
 
 (()=>{
 'use strict';
-const APP_VERSION='V49.0';
+const APP_VERSION='V49.6';
 const ADMIN_RUT='184467267',ACCESS_KEY='1234',DB='molino-control-data';
 const state={user:'',role:'OPERADOR',snapshot:null,page:1,search:{},invoiceFilters:{from:'',to:'',month:'',day:'',userSet:false},dispatchDraftItems:[],dispatchPlan:[],ineSelected:'',ineMonths:[],existenceSelected:'',existenceRecords:[],existenceBaseRecords:[]};
 const CONTACTS_DB='molino-client-contacts-v1';
@@ -36,6 +36,7 @@ const n=v=>{if(typeof v==='number')return Number.isFinite(v)?v:0;const x=String(
 // División segura usada por INE/Existencia: evita referencias inexistentes y divisiones por cero.
 const divideSafe=(a,b)=>Math.abs(Number(b)||0)>0?Number(a||0)/Number(b):0;
 window.divideSafe=divideSafe;
+window.hashText=hashText;
 const money=v=>n(v).toLocaleString('es-CL',{maximumFractionDigits:0}),dec=v=>n(v).toLocaleString('es-CL',{maximumFractionDigits:2});
 const safeDate=v=>{if(v instanceof Date)return v.toLocaleDateString('es-CL');if(typeof v==='number'&&v>20000&&v<60000)return new Date(Math.round((v-25569)*86400000)).toLocaleDateString('es-CL');return String(v??'')};
 const emptySnap=()=>({fileName:'',lastLoaded:0,sheets:[],metrics:{ine:{totalNeto:0,totalKg:0,totalPromedio:0,netoHarinas:0,kgHarinas:0,promedioHarinas:0,periodo:'',items:[]},sacos:{ventasSacos:0,kgSacos:0,items:[]},granel:{totalGranel:0,items:[]},iva:{neto:0,iva:0,total:0,docs:0}},documents:[],clients:[],guides:[],nc:[],invoices:[],products:[]});
@@ -86,6 +87,36 @@ function ineMonthKey(v){
   if(m){const month=Number(m[1]);if(month>=1&&month<=12)return `${m[2]}-${String(month).padStart(2,'0')}`;}
   return '';
 }
+
+function ineMonthLabel(key){
+  if(!/^\d{4}-\d{2}$/.test(String(key||''))) return key||'Sin período';
+  const [y,mo]=String(key).split('-').map(Number);
+  return new Date(y,mo-1,1).toLocaleDateString('es-CL',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase());
+}
+window.ineMonthLabel=ineMonthLabel;
+window.classifyHarina=classifyHarina;
+
+function classifyHarina(name){
+  return /^HARINA\b/i.test(String(name||'').trim());
+}
+
+const INE_FAMILIES=Object.freeze([
+  'HARINA GRANEL','HARINA 25KG','HARINA 10 KG','HARINILLA KG',
+  'GRITZ SEMOL KG','H. F. MAIZ KG','ZOOTECNICA KG','GERMEN KG'
+]);
+window.INE_FAMILIES=INE_FAMILIES;
+
+function orderIneItems(items){
+  const src=Array.isArray(items)?items:[];
+  const map=new Map(src.map(x=>[String(x.name||'').trim().toUpperCase(),x]));
+  return INE_FAMILIES.map(name=>map.get(name.toUpperCase())||{name,neto:0,kg:0,promedio:0,vn:0,kgp:0});
+}
+
+function orderInItems(items){ return orderIneItems(items); }
+
+window.orderIneItems=orderIneItems;
+window.orderInItems=orderInItems;
+window.renderRuntimeVersion=APP_VERSION;
 
 // V49.4: período INE universal. Nunca usa el mes para escoger una fórmula.
 function normalizeInePeriodClient(v){
@@ -216,6 +247,7 @@ function canonicalExistenceRows(rows){
     };
   });
 }
+window.canonicalExistenceRows=canonicalExistenceRows;
 
 function canonicalExistenceDetailRows(rows){
   const src=Array.isArray(rows)?rows:[];
@@ -653,7 +685,7 @@ function renderGuides(){const rows=state.snapshot?.guides||[];$('content').inner
 function renderNC(){const rows=state.snapshot?.nc||[];$('content').innerHTML=`<div class="card"><h3>📝 NC / ND</h3><p class="muted">Notas de crédito/débito detectadas desde LIBRO y CUADRE FIN DE MES.</p>${table(['fuente','folio','fecha','tipo','neto','iva','total'],rows.map(x=>({...x,fecha:safeDate(x.fecha),neto:'$ '+money(x.neto),iva:'$ '+money(x.iva),total:'$ '+money(x.total)})))}</div>`}
 function renderIva(){const i=state.snapshot?.metrics?.iva||emptySnap().metrics.iva;$('content').innerHTML=`<div class="card"><h3>💰 IVA</h3><div class="kpiRow"><div class="kpi"><small>NETO DOCUMENTAL</small><b>$ ${money(i.neto)}</b></div><div class="kpi"><small>IVA</small><b>$ ${money(i.iva)}</b></div><div class="kpi"><small>TOTAL</small><b>$ ${money(i.total)}</b></div><div class="kpi"><small>DOCUMENTOS</small><b>${i.docs.toLocaleString('es-CL')}</b></div></div></div>`}
 async function runHealthCheck(){const checks=[];const add=(name,ok,detail)=>checks.push({name,ok,detail});add('Motor de navegación',typeof show==='function','Módulos registrados');add('Hash runtime',typeof hashText==='function','Integridad local');add('Mapa códigos INE',Object.keys(REGISTRO_CODE_FAMILY_CLIENT).length>=30,`${Object.keys(REGISTRO_CODE_FAMILY_CLIENT).length} códigos mapeados`);add('Formateo RUT',typeof formatRut==='function'&&formatRut('184467267')==='18.446.726-7','Formato chileno');add('Maestro activo',!!state.snapshot, state.snapshot?.fileName||'No hay Maestro cargado');add('Clientes',!!state.snapshot&&Array.isArray(state.snapshot.clients),`${state.snapshot?.clients?.length||0} registros`);add('Facturas',!!state.snapshot&&Array.isArray(state.snapshot.invoices),`${state.snapshot?.invoices?.length||0} registros`);add('Boletas con detalle',!!state.snapshot&&Array.isArray(state.snapshot.boletas),`${state.snapshot?.boletas?.length||0} registros`);add('Guías',!!state.snapshot&&Array.isArray(state.snapshot.guides),`${state.snapshot?.guides?.length||0} registros`);add('Historial INE',Array.isArray(state.ineMonths),`${state.ineMonths.length} meses guardados`);add('Registros de existencia',Array.isArray(state.existenceRecords),`${state.existenceRecords.length} registros guardados`);add('Base de datos de existencias',Array.isArray(state.existenceBaseRecords),`${state.existenceBaseRecords.length} registros base`);add('Integridad base de existencias',state.existenceBaseRecords.every(x=>{const rebuilt=entryFromExistenceBase(x);return !!rebuilt&&rebuilt.quality?.integrityOk!==false&&Math.abs((rebuilt.totalNeto||0)-(x.summaryRows||[]).reduce((a,r)=>a+n(r.disponible$),0))<0.000001}),`${state.existenceBaseRecords.filter(x=>entryFromExistenceBase(x)?.quality?.integrityOk!==false).length}/${state.existenceBaseRecords.length} bases coherentes`);add('Fórmula Maestro universal',state.existenceRecords.filter(x=>x?.quality?.sourceType==='existencia'&&x?.derivedIne?.available).every(x=>x?.derivedIne?.formulaSource==='MAESTRO_FORMULA_FIJA_UNIVERSAL'),'Una sola fórmula fija; el mes no selecciona ningún perfil de cálculo.');add('Separación stock/Promedio INE',state.existenceRecords.filter(x=>x?.quality?.sourceType==='existencia').every(x=>x.totalPromedio==null&&x.promedioHarinas==null&&(x.items||[]).every(i=>i.promedio==null)), 'Existencia no contiene PROMEDIO INE; usa solo valor unitario stock');add('Motor INE universal',state.existenceRecords.filter(x=>x?.quality?.sourceType==='existencia').every(x=>x?.derivedIne?.formulaSource==='MAESTRO_FORMULA_FIJA_UNIVERSAL'),'Cálculo desde Registro; no depende de un Maestro mensual.');try{const db=await idb();const required=[STORE_META,STORE_PARTS,STORE_INE,STORE_EXISTENCE,STORE_EXISTENCE_BASE,STORE_AUDIT,STORE_SETTINGS,STORE_DISPATCH];add('IndexedDB V49.0',required.every(x=>db.objectStoreNames.contains(x)),'Almacenamiento estructurado activo');db.close()}catch(e){add('IndexedDB V49.0',false,e.message||String(e))}return checks}
-function renderAdmin(){$('content').innerHTML=`<div class="card"><div class="sectionTitle"><div><h3>⚙️ Administración</h3><div class="note">Control técnico y operativo de Molino Control.</div></div><span class="pill">V49.4 · UNIVERSAL INE</span></div><div class="infoGrid"><div class="info"><small>Usuario</small><b>${esc(state.user)}</b></div><div class="info"><small>Rol</small><b>${state.role}</b></div><div class="info"><small>Maestro activo</small><b>${esc(state.snapshot?.fileName||'Sin cargar')}</b></div><div class="info"><small>Hojas</small><b>${state.snapshot?.sheets?.length||0}</b></div><div class="info"><small>Meses INE</small><b>${state.ineMonths.length}</b></div><div class="info"><small>Registros existencia</small><b>${state.existenceRecords.length}</b></div><div class="info"><small>Base existencia</small><b>${state.existenceBaseRecords.length}</b></div><div class="info"><small>Persistencia</small><b>IndexedDB V46</b></div></div><div class="toolbar" style="margin-top:14px"><button class="secondary" type="button" onclick="show('maestro')">📥 Administrar Maestro</button><button class="secondary" type="button" onclick="show('private')">📊 Indicadores privados</button><button class="ghost" type="button" id="healthBtn">🛡️ Probar integridad</button><button class="danger" type="button" onclick="logout()">🚪 Cerrar sesión</button></div><div id="healthResult" style="margin-top:14px"></div></div>`;$('healthBtn').onclick=async()=>{const host=$('healthResult');host.innerHTML='<div class="status info">Ejecutando pruebas de integridad…</div>';const checks=await runHealthCheck();host.innerHTML=`<div class="healthGrid">${checks.map(c=>`<div class="healthItem ${c.ok?'ok':'bad'}"><strong>${c.ok?'✓':'✕'} ${esc(c.name)}</strong><span>${esc(c.detail||'')}</span></div>`).join('')}</div><div class="status ${checks.every(c=>c.ok)?'ok':'warn'}"><b>${checks.every(c=>c.ok)?'Sistema listo':'Hay puntos que requieren revisión'}</b> · ${checks.filter(c=>c.ok).length}/${checks.length} pruebas correctas.</div>`}}
+function renderAdmin(){$('content').innerHTML=`<div class="card"><div class="sectionTitle"><div><h3>⚙️ Administración</h3><div class="note">Control técnico y operativo de Molino Control.</div></div><span class="pill">${APP_VERSION} · UNIVERSAL INE</span></div><div class="infoGrid"><div class="info"><small>Usuario</small><b>${esc(state.user)}</b></div><div class="info"><small>Rol</small><b>${state.role}</b></div><div class="info"><small>Maestro activo</small><b>${esc(state.snapshot?.fileName||'Sin cargar')}</b></div><div class="info"><small>Hojas</small><b>${state.snapshot?.sheets?.length||0}</b></div><div class="info"><small>Meses INE</small><b>${state.ineMonths.length}</b></div><div class="info"><small>Registros existencia</small><b>${state.existenceRecords.length}</b></div><div class="info"><small>Base existencia</small><b>${state.existenceBaseRecords.length}</b></div><div class="info"><small>Persistencia</small><b>IndexedDB</b></div></div><div class="toolbar" style="margin-top:14px"><button class="secondary" type="button" onclick="show('maestro')">📥 Administrar Maestro</button><button class="secondary" type="button" onclick="show('private')">📊 Indicadores privados</button><button class="ghost" type="button" id="healthBtn">🛡️ Probar integridad</button><button class="danger" type="button" onclick="logout()">🚪 Cerrar sesión</button></div><div id="healthResult" style="margin-top:14px"></div></div>`;$('healthBtn').onclick=async()=>{const host=$('healthResult');host.innerHTML='<div class="status info">Ejecutando pruebas de integridad…</div>';const checks=await runHealthCheck();host.innerHTML=`<div class="healthGrid">${checks.map(c=>`<div class="healthItem ${c.ok?'ok':'bad'}"><strong>${c.ok?'✓':'✕'} ${esc(c.name)}</strong><span>${esc(c.detail||'')}</span></div>`).join('')}</div><div class="status ${checks.every(c=>c.ok)?'ok':'warn'}"><b>${checks.every(c=>c.ok)?'Sistema listo':'Hay puntos que requieren revisión'}</b> · ${checks.filter(c=>c.ok).length}/${checks.length} pruebas correctas.</div>`}}
 const STORE_META='meta',STORE_PARTS='parts',STORE_INE='ineMonths',STORE_EXISTENCE='existenceRecords',STORE_EXISTENCE_BASE='existenceBase',STORE_AUDIT='audit',STORE_SETTINGS='settings',STORE_DISPATCH='dispatches',CHUNK_SIZE=1500;
 function deriveBoletasFromDocuments(documents){const map=new Map();for(const d of (documents||[])){if(!/BOLETA|\bBT\b/i.test(String(d.tipo||'')))continue;const key=String(d.folio||'').trim();if(!key)continue;if(!map.has(key))map.set(key,{folio:key,fecha:d.fecha||'',cliente:d.cliente||'',rut:d.rut||'',items:[],lineas:0,kg:0,sacos:0,neto:0,iva:0,total:0,fuente:d.fuente||'LIBRO',estado:d.estado||''});const b=map.get(key);if(d.producto||d.detalle)b.items.push({producto:d.producto||'',detalle:d.detalle||'',unidad:d.unidad||'',kg:n(d.kg),sacos:n(d.sacos),cantidad:n(d.sacos)||n(d.kg)});b.lineas++;b.kg+=n(d.kg);b.sacos+=n(d.sacos);b.neto+=n(d.neto);b.iva+=n(d.iva);b.total+=n(d.total);if(!b.cliente&&d.cliente)b.cliente=d.cliente;if(!b.rut&&d.rut)b.rut=d.rut;if(!b.fecha&&d.fecha)b.fecha=d.fecha}return [...map.values()].sort((a,b)=>String(b.fecha||'').localeCompare(String(a.fecha||''))||String(b.folio).localeCompare(String(a.folio),'es',{numeric:true}))}
 
@@ -689,5 +721,32 @@ async function boot(){if(!state.invoiceFilters.month)state.invoiceFilters.month=
   }
   buildNav();try{const saved=localStorage.getItem('molino_user');if(saved)$('userRut').value=saved}catch{};show('dashboard')}
 window.addEventListener('error',e=>{window.__lastAppError=e.error||new Error(e.message||'Error JavaScript');try{toast('⚠️ Error controlado: '+(e.message||'Error JavaScript'),'err')}catch{}});window.addEventListener('unhandledrejection',e=>{window.__lastAppError=e.reason||new Error('Promesa rechazada');try{toast('⚠️ Error controlado: '+(e.reason?.message||String(e.reason||'Error')),'err')}catch{}});
-$('loginForm').addEventListener('submit',e=>{e.preventDefault();login()});$('logoutBtn').addEventListener('click',logout);boot();
+
+function runtimePreflight(){
+  const required={
+    show:typeof window.show==='function',
+    logout:typeof window.logout==='function',
+    ineMonthLabel:typeof window.ineMonthLabel==='function',
+    normalizeInePeriodClient:typeof window.normalizeInePeriodClient==='function',
+    orderIneItems:typeof window.orderIneItems==='function',
+    orderInItems:typeof window.orderInItems==='function',
+    divideSafe:typeof window.divideSafe==='function',
+    hashText:typeof window.hashText==='function',
+    canonicalExistenceRows:typeof window.canonicalExistenceRows==='function',
+    INE_FAMILIES:Array.isArray(window.INE_FAMILIES)&&window.INE_FAMILIES.length===8,
+    renderPrivate:typeof renderPrivate==='function',
+    renderExistencias:typeof renderExistencias==='function',
+    renderAdmin:typeof renderAdmin==='function'
+  };
+  const missing=Object.entries(required).filter(([,ok])=>!ok).map(([k])=>k);
+  window.__MOLINO_RUNTIME__={version:APP_VERSION,ok:missing.length===0,missing,checkedAt:new Date().toISOString()};
+  if(missing.length){
+    const host=document.getElementById('content');
+    if(host)host.innerHTML=`<div class="card"><h3>⚠️ Error de integridad de Molino Control</h3><div class="status err">Faltan componentes de runtime: ${esc(missing.join(', '))}</div><p class="note">La aplicación no continuará para evitar una regresión o mezcla de versiones.</p></div>`;
+    return false;
+  }
+  return true;
+}
+
+$('loginForm').addEventListener('submit',e=>{e.preventDefault();login()});$('logoutBtn').addEventListener('click',logout);if(runtimePreflight())boot();
 })();

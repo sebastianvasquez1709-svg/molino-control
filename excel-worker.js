@@ -1,4 +1,4 @@
-// V49.4: lector XLSX robusto + fórmula INE Maestro universal + exclusión Softland de Notas de Crédito.
+// V49.6: lector XLSX robusto + fórmula INE Maestro universal + exclusión Softland de Notas de Crédito.
 // Corrige celdas vacías autocerradas para conservar las columnas S/U/AC/AG.
 // El cálculo de Existencia no depende de perfiles mensuales.
 const td=new TextDecoder('utf-8');
@@ -333,12 +333,12 @@ self.onmessage = async (e) => {
         available:unmapped.length===0, key, periodo:key, items, totalKg, totalNeto, excludedCreditNotes,
         totalPromedio:divideSafe(totalNeto,totalKg), netoHarinas, kgHarinas, promedioHarinas:divideSafe(netoHarinas,kgHarinas),
         formula:'UNIVERSAL: NC identificadas [NA]/[NT]/[NX]/[NY] y anuladas por la propia condición AJ/AM/AN del Maestro;  AJ=IF(OR(N=Factura[FT],N=Guía[ST]),S,0); AM=IF(N=Boleta[BT],S," "); AN=IFERROR(VLOOKUP(AM,CODIGOS!R16:S111,2,0),0); AQ=AJ+AN; AR=AQ*U; D=B/C; E=B/B15; F=C/C15; D15=B15/C15; B18=B7+B8+B9; B19=C7+C8+C9; B20=B18/B19',
-        engineVersion:'V49.4', source:'FORMULA_MAESTRO_FIJA_RECALCULADA_AL_REGISTRO_CON_NC_IDENTIFICADA',
+        engineVersion:'V49.6', source:'FORMULA_MAESTRO_FIJA_RECALCULADA_AL_REGISTRO_CON_NC_IDENTIFICADA',
         sourceDescription:'Una sola fórmula fija copiada/recalculada del BASE DE DATOS del Maestro. Las Notas de Crédito Softland se identifican y, al recalcular AJ/AM/AN, quedan en 0 automáticamente y se auditan por separado.',
         formulaSource:'MAESTRO_FORMULA_FIJA_UNIVERSAL', usesRegisterFormula:true,
         unmapped,
         missingReason:unmapped.length?'Existen líneas INFO=1 con códigos que no están en el catálogo Maestro; se bloquea el resultado oficial hasta resolverlas.':undefined,
-        audit:{periodKey:key,formulaVersion:'V49.4-UNIVERSAL-NC-MAESTRO-EXACT',formulaRows:formulaAppliedRows,formulaZeroRows,documents:MAESTRO_DOC_TYPES,lookupEntries:Object.keys(MAESTRO_BOLETA_LOOKUP).length,excludedCreditNotes:excludedCreditNotes.length}
+        audit:{periodKey:key,formulaVersion:'V49.6-UNIVERSAL-NC-MAESTRO-EXACT',formulaRows:formulaAppliedRows,formulaZeroRows,documents:MAESTRO_DOC_TYPES,lookupEntries:Object.keys(MAESTRO_BOLETA_LOOKUP).length,excludedCreditNotes:excludedCreditNotes.length}
       };
     };
 
