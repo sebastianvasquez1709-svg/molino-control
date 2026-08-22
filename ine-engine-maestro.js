@@ -73,11 +73,17 @@
   }
 
   async function loadMaestroParameters() {
-    const sb = await getSupabaseClient();
-    const { data, error } = await sb.rpc('maestro_ine_parameters');
-    if (error) throw error;
-    if (!data || !data.code_map || !data.controls) throw new Error('La parametrización INE del Maestro está incompleta.');
-    return data;
+    try {
+      const sb = await getSupabaseClient();
+      const { data, error } = await sb.rpc('maestro_ine_parameters');
+      if (!error && data && data.code_map && data.controls) return data;
+    } catch (_) {}
+
+    const response = await fetch('/ine-maestro-static.json', { cache: 'no-store' });
+    if (!response.ok) throw new Error('No fue posible cargar la parametrización INE del Maestro.');
+    const fallback = await response.json();
+    if (!fallback || !fallback.code_map || !fallback.controls) throw new Error('La parametrización estática del Maestro está incompleta.');
+    return fallback;
   }
 
   function locateHeaderRow(rows) {
@@ -364,10 +370,14 @@
   }
 
   function isExistenceInput(input) {
-    const txt = norm((input.closest('section,article,.card,.content,form,div')?.textContent || '').slice(0, 700));
-    if (/REGISTRO DE EXISTENCIA|CARGAR REGISTRO|SUBIR REGISTRO/.test(txt)) return true;
+    let node = input;
+    for (let level = 0; level < 7 && node; level++, node = node.parentElement) {
+      const txt = norm(String(node.textContent || '').slice(0, 1800));
+      if (/REGISTRO DE EXISTENCIA|CARGAR REGISTRO|SUBIR REGISTRO/.test(txt)) return true;
+    }
     const name = norm(input.getAttribute('name') || input.id || '');
-    return /EXIST|REGISTRO/.test(name);
+    const accept = norm(input.getAttribute('accept') || '');
+    return /EXIST|REGISTRO/.test(name) || (/XLSX|XLS/.test(accept) && /EXIST/.test(name));
   }
 
   function injectCardHost(input) {
