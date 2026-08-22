@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Molino Control · Datos Cloud</title>
+<style>
+:root{font-family:Inter,Segoe UI,Arial,sans-serif;color:#1d2939;background:#f4f7fb}
+*{box-sizing:border-box}body{margin:0;padding:24px}.wrap{max-width:1200px;margin:auto}.card{background:#fff;border:1px solid #d9e2ef;border-radius:16px;padding:20px;box-shadow:0 10px 30px rgba(18,58,120,.07)}
+h1{margin:0;color:#123a78}.muted{color:#667085}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0}.metric{background:#f8fafc;border:1px solid #e1e8f0;border-radius:12px;padding:14px}.metric small{display:block;color:#667085}.metric b{display:block;font-size:24px;color:#123a78;margin-top:4px}
+form{max-width:460px}.field{margin:12px 0}.field label{display:block;font-weight:800;margin-bottom:6px}.field input{width:100%;padding:11px 12px;border:1px solid #c9d6e6;border-radius:10px}
+button{border:0;border-radius:10px;padding:11px 15px;background:#123a78;color:#fff;font-weight:800;cursor:pointer}button.secondary{background:#e9f0fa;color:#123a78}.hidden{display:none!important}.status{margin-top:12px;padding:10px 12px;border-radius:10px}.ok{background:#ecfdf3;color:#067647}.err{background:#fff1f1;color:#b42318}.info{background:#eef4ff;color:#174ea6}
+.tableWrap{overflow:auto;border:1px solid #dfe7f0;border-radius:12px}.table{width:100%;border-collapse:collapse;background:#fff}.table th,.table td{padding:9px 10px;border-bottom:1px solid #edf1f6;text-align:left;font-size:12px;white-space:nowrap}.table th{background:#f4f7fb;color:#344054;text-transform:uppercase;font-size:10px}
+.toolbar{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}.source{font-size:12px;color:#667085}
+@media(max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.grid{grid-template-columns:1fr}body{padding:14px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="login" class="card">
+    <h1>Molino Control · Conexión Cloud</h1>
+    <p class="muted">Acceso real a Supabase. La clave de backend nunca se expone en este frontend.</p>
+    <form id="loginForm">
+      <div class="field"><label>Correo</label><input id="email" type="email" autocomplete="username" required placeholder="correo@dominio.cl"></div>
+      <div class="field"><label>Clave</label><input id="password" type="password" autocomplete="current-password" required></div>
+      <button type="submit">Conectar</button>
+      <div id="loginMsg"></div>
+    </form>
+  </div>
+
+  <div id="app" class="hidden">
+    <div class="card">
+      <div class="toolbar"><div><h1>Molino Control · Datos Cloud</h1><div class="source" id="sessionLabel"></div></div><div><button id="refresh" class="secondary">Actualizar</button> <button id="logout" class="secondary">Cerrar sesión</button></div></div>
+      <div id="status" class="status info">Consultando…</div>
+      <div class="grid" id="metrics"></div>
+    </div>
+
+    <div class="card" style="margin-top:14px"><div class="toolbar"><h2>Clientes activos</h2><span class="source">Supabase · public.clientes</span></div><div id="clients" class="tableWrap"></div></div>
+    <div class="card" style="margin-top:14px"><div class="toolbar"><h2>Productos activos</h2><span class="source">Supabase · public.productos</span></div><div id="products" class="tableWrap"></div></div>
+    <div class="card" style="margin-top:14px"><div class="toolbar"><h2>Documentos</h2><span class="source">Supabase · public.documentos</span></div><div id="documents" class="tableWrap"></div></div>
+    <div class="card" style="margin-top:14px"><div class="toolbar"><h2>Despachos</h2><span class="source">Supabase · public.despachos</span></div><div id="dispatches" class="tableWrap"></div></div>
+  </div>
+</div>
+<script src="/molino-cloud.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+function table(rows, cols){
+  if(!rows.length)return '<div style="padding:22px" class="muted">Sin registros.</div>';
+  return '<table class="table"><thead><tr>'+cols.map(([k,l])=>`<th>${l}</th>`).join('')+'</tr></thead><tbody>'+rows.slice(0,500).map(r=>'<tr>'+cols.map(([k])=>`<td>${esc(typeof r[k]==='object'?JSON.stringify(r[k]):r[k])}</td>`).join('')+'</tr>').join('')+'</tbody></table>';
+}
+async function refresh(){
+  $('status').textContent='Consultando Supabase…';$('status').className='status info';
+  try{
+    const session=await MolinoCloud.getSession();
+    if(!session){$('login').classList.remove('hidden');$('app').classList.add('hidden');return;}
+    $('login').classList.add('hidden');$('app').classList.remove('hidden');$('sessionLabel').textContent=session.user.email||'Sesión autenticada';
+    const [snap,health]=await Promise.all([MolinoCloud.snapshot(),MolinoCloud.health()]);
+    $('status').innerHTML='<b>● Conectado y autorizado.</b>'; $('status').className='status ok';
+    $('metrics').innerHTML=[
+      ['Maestro',health.status||'—'],['Hojas',health.sheets??0],['Filas fuente',(health.source_rows??0).toLocaleString('es-CL')],['BASE DE DATOS',(health.base_rows??0).toLocaleString('es-CL')],
+      ['Clientes',snap.clientes?.length||0],['Productos',snap.productos?.length||0],['Documentos',snap.documentos?.length||0],['Despachos',snap.despachos?.length||0]
+    ].map(([l,v])=>`<div class="metric"><small>${l}</small><b>${esc(v)}</b></div>`).join('');
+    $('clients').innerHTML=table(snap.clientes,[['rut','RUT'],['razon_social','Razón social'],['nombre_fantasia','Nombre fantasía'],['giro','Giro'],['comuna','Comuna'],['ciudad','Ciudad'],['telefono','Teléfono'],['email','Email']]);
+    $('products').innerHTML=table(snap.productos,[['codigo','Código'],['nombre','Producto'],['unidad','Unidad'],['kilos_por_saco','Kg/saco']]);
+    $('documents').innerHTML=table(snap.documentos,[['tipo','Tipo'],['folio','Folio'],['fecha','Fecha'],['rut','RUT'],['cliente','Cliente'],['neto','Neto'],['iva','IVA'],['total','Total'],['estado','Estado'],['fuente','Fuente']]);
+    $('dispatches').innerHTML=table(snap.despachos,[['fecha','Fecha'],['rut','RUT'],['cliente','Cliente'],['producto','Producto'],['kilos','Kg'],['sacos','Sacos'],['estado','Estado'],['observaciones','Observaciones']]);
+  }catch(e){$('status').textContent=e.message||String(e);$('status').className='status err'}
+}
+$('loginForm').addEventListener('submit',async e=>{e.preventDefault();$('loginMsg').textContent='Conectando…';try{await MolinoCloud.signIn($('email').value.trim(),$('password').value);$('loginMsg').textContent='';await refresh()}catch(err){$('loginMsg').textContent=err.message||String(err);$('loginMsg').className='status err'}});
+$('logout').addEventListener('click',async()=>{await MolinoCloud.signOut();await refresh()});
+$('refresh').addEventListener('click',refresh);refresh();
+</script>
+</body>
+</html>
