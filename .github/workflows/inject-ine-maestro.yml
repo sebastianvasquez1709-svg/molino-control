@@ -1,0 +1,50 @@
+name: Integrate Maestro INE engine
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ine-engine-maestro.js'
+      - 'ine-maestro-static.json'
+      - 'scripts/inject-ine-maestro.js'
+      - 'scripts/patch-ine-engine-fallback.js'
+      - 'scripts/patch-ine-engine-input.js'
+      - 'index.html'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  inject:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch INE engine fallback
+        run: node scripts/patch-ine-engine-fallback.js
+
+      - name: Patch Registro de Existencia detector
+        run: node scripts/patch-ine-engine-input.js
+
+      - name: Validate JavaScript syntax
+        run: node --check ine-engine-maestro.js
+
+      - name: Validate static Maestro JSON
+        run: node -e "JSON.parse(require('fs').readFileSync('ine-maestro-static.json','utf8')); console.log('Maestro JSON OK')"
+
+      - name: Patch app shell
+        run: node scripts/inject-ine-maestro.js
+
+      - name: Commit patch if needed
+        run: |
+          if git diff --quiet -- index.html ine-engine-maestro.js; then
+            echo 'No patch required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html ine-engine-maestro.js
+          git commit -m 'build: wire Maestro INE engine into app shell [skip ci]'
+          git push
