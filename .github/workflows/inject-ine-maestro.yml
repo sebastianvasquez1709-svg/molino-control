@@ -8,6 +8,7 @@ on:
       - 'ine-maestro-static.json'
       - 'scripts/inject-ine-maestro.js'
       - 'scripts/patch-ine-engine-fallback.js'
+      - 'scripts/patch-ine-engine-input.js'
       - 'index.html'
   workflow_dispatch:
 
@@ -23,6 +24,15 @@ jobs:
 
       - name: Patch INE engine fallback
         run: node scripts/patch-ine-engine-fallback.js
+
+      - name: Patch Registro de Existencia detector
+        run: node scripts/patch-ine-engine-input.js
+
+      - name: Validate JavaScript syntax
+        run: node --check ine-engine-maestro.js
+
+      - name: Validate static Maestro JSON
+        run: node -e "JSON.parse(require('fs').readFileSync('ine-maestro-static.json','utf8')); console.log('Maestro JSON OK')"
 
       - name: Patch app shell
         run: node scripts/inject-ine-maestro.js
