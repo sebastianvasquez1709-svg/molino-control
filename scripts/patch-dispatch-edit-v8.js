@@ -52,7 +52,7 @@ const injection=`
    dClientSearch:row.cliente||'',dClientKey:row.rut||'',dRut:row.rut||'',dDestination:row.destination||'',dDate:row.fecha||'',dFolio:row.folio||'',dOC:row.oc||'O/C PENDIENTE',
    dProduct:row.producto||'',dFormat:row.formato||'Sacos 25 KG',dQty:row.cantidad??'',dKg:row.kg??'',dObs:row.observacion||''
   };
-  Object.entries(values).forEach(([id,val])=>{const el=field(id);if(el)el.value=String(val)})
+  Object.entries(values).forEach(([id,val])=>{const el=field(id);if(el)el.value=String(val)});
   const btn=[...document.querySelectorAll('button')].find(b=>/Guardar despacho/i.test((b.textContent||'')));
   if(btn)btn.textContent='💾 Guardar cambios';
   const card=document.querySelector('.dispatchFormCard');if(card)card.scrollIntoView({behavior:'smooth',block:'start'});
@@ -125,4 +125,3 @@ const style=`
 src=src.slice(0,close)+injection+style+'\n'+src.slice(close);
 fs.writeFileSync(file,src);
 console.log('DISPATCH EDIT V8 APPLIED');
-`;
