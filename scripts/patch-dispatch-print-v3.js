@@ -3,8 +3,11 @@ const path = require('path');
 
 const file = path.join(process.cwd(), 'app.js');
 let src = fs.readFileSync(file, 'utf8');
-const marker = '// DISPATCH_PRINT_V3_CHROME_SAFE';
 
+// Elimina el fallback heredado que recargaba la aplicación y devolvía al login.
+src = src.replace(/try\{window\.print\(\)\}\s*finally\{location\.reload\(\)\}/g, 'try{window.print()}catch{}');
+
+const marker = '// DISPATCH_PRINT_V3_CHROME_SAFE';
 if (!src.includes(marker)) {
   const close = src.lastIndexOf('\n})();');
   if (close < 0) throw new Error('No se encontró el cierre del IIFE principal.');
@@ -26,7 +29,7 @@ window.printDispatchPlan=()=>{
    frame.id='dispatchPrintFrame';
    frame.title='Impresión de despachos';
    frame.setAttribute('aria-hidden','true');
-   frame.setAttribute('sandbox','allow-modals');
+   frame.setAttribute('sandbox','allow-modals allow-same-origin');
    frame.setAttribute('allow','modals');
    Object.assign(frame.style,{
      position:'fixed',left:'-12000px',top:'0',width:'1100px',height:'800px',
@@ -49,7 +52,6 @@ window.printDispatchPlan=()=>{
        w.onafterprint=cleanup;
        w.focus();
        w.print();
-       // Respaldo para navegadores que no disparan afterprint al imprimir iframe.
        cleanup();
      }catch(e){
        console.error('DISPATCH_PRINT_V3',e);
