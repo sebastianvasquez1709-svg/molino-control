@@ -13,6 +13,7 @@ on:
       - 'scripts/patch-ine-engine-input.js'
       - 'scripts/patch-dispatch-print.js'
       - 'scripts/patch-dispatch-print-v3.js'
+      - 'scripts/patch-dispatch-ux-v4.js'
       - 'scripts/harden-runtime.js'
       - 'scripts/smoke-integrity.js'
       - 'index.html'
@@ -41,6 +42,9 @@ jobs:
       - name: Patch impresión Chrome-safe
         run: node scripts/patch-dispatch-print-v3.js
 
+      - name: Patch UX profesional de Despachos y clima
+        run: node scripts/patch-dispatch-ux-v4.js
+
       - name: Apply runtime hardening
         run: node scripts/harden-runtime.js
 
@@ -51,6 +55,7 @@ jobs:
           node --check scripts/harden-runtime.js
           node --check scripts/patch-dispatch-print.js
           node --check scripts/patch-dispatch-print-v3.js
+          node --check scripts/patch-dispatch-ux-v4.js
           node --check scripts/smoke-integrity.js
 
       - name: Validate static Maestro JSON
@@ -58,6 +63,25 @@ jobs:
 
       - name: Run application integrity smoke test
         run: node scripts/smoke-integrity.js
+
+      - name: Validate dispatch UX
+        run: node - <<'NODE'
+const fs=require('fs');
+const app=fs.readFileSync('app.js','utf8');
+const required=[
+  '// DISPATCH_UX_V4_PRO',
+  'renderDispatchPlanTable()',
+  'window.deleteDispatchById=',
+  'window.checkDispatchWeather=',
+  'dispatchDeleteBtn',
+  'dispatchProHero',
+  'dispatch-ux-v4'
+];
+for(const marker of required) if(!app.includes(marker)) throw new Error('Falta marcador Despachos/Clima: '+marker);
+if(!/confirm\([^)]*Eliminar SOLO este despacho/.test(app)) throw new Error('Falta confirmación de eliminación individual.');
+if(!/state\.dispatchPlan\.splice\(idx,1\)/.test(app)) throw new Error('La eliminación no es individual.');
+console.log('DISPATCH UX V4 CHECK: PASS');
+NODE
 
       - name: Validate dispatch print source
         run: node - <<'NODE'
@@ -74,7 +98,7 @@ const required = [
   'window.printDispatchPlan=()=>{',
   "document.createElement('iframe')",
   'frame.srcdoc=html',
-  "frame.setAttribute('sandbox','allow-modals')",
+  "frame.setAttribute('sandbox','allow-modals allow-same-origin')",
   "frame.setAttribute('allow','modals')"
 ];
 for (const marker of required) if (!app.includes(marker)) throw new Error('Falta marcador de impresión: '+marker);
@@ -95,5 +119,5 @@ NODE
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add index.html ine-engine-maestro.js app.js
-          git commit -m 'fix: make dispatch printing Chrome-safe without leaving module [skip ci]'
+          git commit -m 'feat: professionalize dispatch module and fix weather controls [skip ci]'
           git push
