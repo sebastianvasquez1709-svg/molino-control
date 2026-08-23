@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - '.github/workflows/inject-ine-maestro.yml'
       - 'ine-engine-maestro.js'
       - 'ine-maestro-static.json'
       - 'scripts/inject-ine-maestro.js'
