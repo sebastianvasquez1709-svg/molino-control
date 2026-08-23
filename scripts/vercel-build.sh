@@ -1,27 +1,30 @@
 #!/bin/sh
 set -eu
-# Verified document-module visual build: invoices, boletas and guides.
+# Verified document-module build: visual separation + advanced search/filtering.
 node scripts/patch-dispatch-print.js
 node scripts/patch-dispatch-print-v3.js
 node scripts/patch-dispatch-ux-v6.js
 node scripts/fix-dispatch-generated-v7.js
 node scripts/patch-dispatch-edit-v8.js
 node scripts/patch-documents-modules-v1.js
+node scripts/patch-document-search-v2.js
 node --check scripts/fix-dispatch-generated-v7.js
 node --check scripts/patch-dispatch-edit-v8.js
 node --check scripts/patch-documents-modules-v1.js
+node --check scripts/patch-document-search-v2.js
 node --check app.js
 node - <<'NODE'
 const fs=require('fs');
 const app=fs.readFileSync('app.js','utf8');
-const required=['dispatchProHero','dispatchDeleteBtn','window.deleteDispatchById','window.editDispatchById','DISPATCH_UX_V6_PRO','DISPATCH_EDIT_V8_PRO','DOCUMENT_MODULES_V1'];
+const required=['dispatchProHero','dispatchDeleteBtn','window.deleteDispatchById','window.editDispatchById','DISPATCH_UX_V6_PRO','DISPATCH_EDIT_V8_PRO','DOCUMENT_MODULES_V1','DOCUMENT_SEARCH_V2'];
 for(const marker of required){if(!app.includes(marker))throw new Error('Falta marcador requerido: '+marker)}
 if(!/state\.dispatchPlan\.splice\(idx,1\)/.test(app))throw new Error('La eliminación no es individual.')
 if(!/data-dispatch-delete/.test(app))throw new Error('Falta control de eliminación por fila.')
 if(!/data-dispatch-edit/.test(app))throw new Error('Falta control de modificación por fila.')
 if(!/Guardar cambios/.test(app))throw new Error('Falta modo de edición.')
 if(!/docInvoices/.test(app)||!/docBoletas/.test(app)||!/docGuides/.test(app))throw new Error('Falta separación visual de documentos.')
-console.log('DISPATCH + DOCUMENT MODULE STATIC CHECK: PASS')
+if(!/DOCUMENT_SEARCH_V2/.test(app))throw new Error('Falta motor de búsqueda avanzada.')
+console.log('DISPATCH + DOCUMENT SEARCH STATIC CHECK: PASS')
 NODE
 rm -rf public
 mkdir -p public
