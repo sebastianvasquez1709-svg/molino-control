@@ -381,6 +381,7 @@
   }
 
   function injectCardHost(input) {
+    input.parentElement?.parentElement?.querySelectorAll('[data-molino-ine-host]')?.forEach(node => node.remove());
     const host = document.createElement('div');
     host.dataset.molinoIneHost = '1';
     const parent = input.closest('section,article,.card,.content,form,div') || input.parentElement;
@@ -400,6 +401,22 @@
     if (!isExistenceInput(input)) return;
     const file = input.files?.[0];
     if (!file) return;
+    const ext = String(file.name || '').toLowerCase().split('.').pop();
+    if (!['xlsx','xls'].includes(ext)) {
+      const status = statusHost(input);
+      status.textContent = 'INE Maestro: el archivo debe ser XLSX o XLS.';
+      status.style.color = '#b42318';
+      input.value = '';
+      return;
+    }
+    const MAX_FILE_BYTES = 60 * 1024 * 1024;
+    if (file.size > MAX_FILE_BYTES) {
+      const status = statusHost(input);
+      status.textContent = 'INE Maestro: el archivo supera el límite seguro de 60 MB.';
+      status.style.color = '#b42318';
+      input.value = '';
+      return;
+    }
     const status = statusHost(input);
     status.textContent = 'Procesando Registro de Existencia con las fórmulas del Maestro…';
     try {
