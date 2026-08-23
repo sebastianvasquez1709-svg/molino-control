@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+# Verified document-module visual build: invoices, boletas and guides.
 node scripts/patch-dispatch-print.js
 node scripts/patch-dispatch-print-v3.js
 node scripts/patch-dispatch-ux-v6.js
