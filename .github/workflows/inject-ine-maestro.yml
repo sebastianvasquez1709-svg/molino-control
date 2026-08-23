@@ -11,6 +11,7 @@ on:
       - 'scripts/patch-ine-engine-fallback.js'
       - 'scripts/patch-ine-engine-input.js'
       - 'scripts/harden-runtime.js'
+      - 'scripts/smoke-integrity.js'
       - 'index.html'
   workflow_dispatch:
 
@@ -37,9 +38,13 @@ jobs:
         run: |
           node --check ine-engine-maestro.js
           node --check scripts/harden-runtime.js
+          node --check scripts/smoke-integrity.js
 
       - name: Validate static Maestro JSON
         run: node -e "JSON.parse(require('fs').readFileSync('ine-maestro-static.json','utf8')); console.log('Maestro JSON OK')"
+
+      - name: Run application integrity smoke test
+        run: node scripts/smoke-integrity.js
 
       - name: Patch app shell
         run: node scripts/inject-ine-maestro.js
