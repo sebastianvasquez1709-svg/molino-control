@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 # Stable build: apply only the reviewed professional Guides integration, then validate.
+# This version intentionally runs the small renderer fragment patch, avoiding the
+# previous inline-template generator that caused the Vercel SyntaxError.
 node scripts/patch-guides-professional-v1.js
 node --check app.js
 node --check scripts/patch-guides-professional-v1.js
