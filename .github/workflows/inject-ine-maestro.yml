@@ -12,6 +12,7 @@ on:
       - 'scripts/patch-ine-engine-fallback.js'
       - 'scripts/patch-ine-engine-input.js'
       - 'scripts/patch-dispatch-print.js'
+      - 'scripts/patch-dispatch-print-v3.js'
       - 'scripts/harden-runtime.js'
       - 'scripts/smoke-integrity.js'
       - 'index.html'
@@ -37,6 +38,9 @@ jobs:
       - name: Patch despacho e impresión A4
         run: node scripts/patch-dispatch-print.js
 
+      - name: Patch impresión Chrome-safe
+        run: node scripts/patch-dispatch-print-v3.js
+
       - name: Apply runtime hardening
         run: node scripts/harden-runtime.js
 
@@ -46,6 +50,7 @@ jobs:
           node --check ine-engine-maestro.js
           node --check scripts/harden-runtime.js
           node --check scripts/patch-dispatch-print.js
+          node --check scripts/patch-dispatch-print-v3.js
           node --check scripts/smoke-integrity.js
 
       - name: Validate static Maestro JSON
@@ -65,14 +70,17 @@ const required = [
   '<colgroup>',
   'REPARTOS / PLANILLA DE DESPACHOS',
   '// DISPATCH_PRINT_V2_STATE_SAFE',
+  '// DISPATCH_PRINT_V3_CHROME_SAFE',
   'window.printDispatchPlan=()=>{',
   "document.createElement('iframe')",
-  'frame.srcdoc=html'
+  'frame.srcdoc=html',
+  "frame.setAttribute('sandbox','allow-modals')",
+  "frame.setAttribute('allow','modals')"
 ];
 for (const marker of required) if (!app.includes(marker)) throw new Error('Falta marcador de impresión: '+marker);
 if (/class=\\\\"num\\\\"/.test(app)) throw new Error('Persisten escapes de comillas defectuosos en la impresión.');
 if (/window\.printDispatchPlan[\s\S]{0,5000}location\.reload\(\)/.test(app)) throw new Error('El flujo de impresión aún puede recargar la aplicación.');
-console.log('DISPATCH PRINT CHECK: PASS');
+console.log('DISPATCH PRINT V3 CHECK: PASS');
 NODE
 
       - name: Patch app shell
@@ -87,5 +95,5 @@ NODE
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add index.html ine-engine-maestro.js app.js
-          git commit -m 'fix: make dispatch printing state safe and production ready [skip ci]'
+          git commit -m 'fix: make dispatch printing Chrome-safe without leaving module [skip ci]'
           git push
