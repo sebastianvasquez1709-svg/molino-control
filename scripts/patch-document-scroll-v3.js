@@ -7,12 +7,11 @@ if(close<0)throw new Error('No se encontró cierre IIFE.');
 const injection=String.raw`
 // DOCUMENT_SCROLL_V3
 (function(){
-  function enhance(kind){
+  function enhance(){
     const card=document.querySelector('#content .docModule')||document.querySelector('#content .card');
     if(!card)return;
     const tableWrap=card.querySelector('.docV2Table')?.closest('.tableWrap')||card.querySelector('.tableWrap');
     if(!tableWrap)return;
-    if(tableWrap.dataset.scrollV3==='1')return;
     tableWrap.dataset.scrollV3='1';
     tableWrap.classList.add('docScrollWrap');
     const table=tableWrap.querySelector('table');
@@ -30,7 +29,6 @@ const injection=String.raw`
     controls.querySelector('[data-scroll-bottom]').onclick=()=>tableWrap.scrollTo({top:tableWrap.scrollHeight,behavior:'smooth'});
     controls.querySelector('[data-scroll-step-up]').onclick=()=>tableWrap.scrollBy({top:-step(),behavior:'smooth'});
     controls.querySelector('[data-scroll-step-down]').onclick=()=>tableWrap.scrollBy({top:step(),behavior:'smooth'});
-
     const update=()=>{
       controls.classList.toggle('isTop',tableWrap.scrollTop<=4);
       controls.classList.toggle('isBottom',tableWrap.scrollTop+tableWrap.clientHeight>=tableWrap.scrollHeight-4);
@@ -38,17 +36,9 @@ const injection=String.raw`
     tableWrap.addEventListener('scroll',update,{passive:true});
     update();
   }
-  const wire=(name,fn)=>{
-    const original=window[name];
-    if(typeof original!=='function'||original.__scrollV3Wrapped)return;
-    const wrapped=function(){const out=original.apply(this,arguments);enhance(name);return out};
-    wrapped.__scrollV3Wrapped=true;
-    window[name]=wrapped;
-  };
-  wire('renderInvoices', '');
-  wire('renderBoletas', '');
-  wire('renderGuides', '');
-
+  const origInv=renderInvoices; renderInvoices=function(){const out=origInv.apply(this,arguments);enhance();return out};
+  const origBol=renderBoletas; renderBoletas=function(){const out=origBol.apply(this,arguments);enhance();return out};
+  const origGuide=renderGuides; renderGuides=function(){const out=origGuide.apply(this,arguments);enhance();return out};
   const style=document.createElement('style');
   style.id='document-scroll-v3';
   style.textContent=`
