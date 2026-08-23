@@ -9,6 +9,7 @@ on:
       - 'scripts/inject-ine-maestro.js'
       - 'scripts/patch-ine-engine-fallback.js'
       - 'scripts/patch-ine-engine-input.js'
+      - 'scripts/harden-runtime.js'
       - 'index.html'
   workflow_dispatch:
 
@@ -28,8 +29,13 @@ jobs:
       - name: Patch Registro de Existencia detector
         run: node scripts/patch-ine-engine-input.js
 
+      - name: Apply runtime hardening
+        run: node scripts/harden-runtime.js
+
       - name: Validate JavaScript syntax
-        run: node --check ine-engine-maestro.js
+        run: |
+          node --check ine-engine-maestro.js
+          node --check scripts/harden-runtime.js
 
       - name: Validate static Maestro JSON
         run: node -e "JSON.parse(require('fs').readFileSync('ine-maestro-static.json','utf8')); console.log('Maestro JSON OK')"
@@ -46,5 +52,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add index.html ine-engine-maestro.js
-          git commit -m 'build: wire Maestro INE engine into app shell [skip ci]'
+          git commit -m 'build: apply non-breaking runtime hardening [skip ci]'
           git push
