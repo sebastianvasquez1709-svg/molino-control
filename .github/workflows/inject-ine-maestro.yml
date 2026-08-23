@@ -10,9 +10,11 @@ on:
       - 'scripts/inject-ine-maestro.js'
       - 'scripts/patch-ine-engine-fallback.js'
       - 'scripts/patch-ine-engine-input.js'
+      - 'scripts/patch-dispatch-print.js'
       - 'scripts/harden-runtime.js'
       - 'scripts/smoke-integrity.js'
       - 'index.html'
+      - 'app.js'
   workflow_dispatch:
 
 permissions:
@@ -31,13 +33,18 @@ jobs:
       - name: Patch Registro de Existencia detector
         run: node scripts/patch-ine-engine-input.js
 
+      - name: Patch despacho e impresión A4
+        run: node scripts/patch-dispatch-print.js
+
       - name: Apply runtime hardening
         run: node scripts/harden-runtime.js
 
       - name: Validate JavaScript syntax
         run: |
+          node --check app.js
           node --check ine-engine-maestro.js
           node --check scripts/harden-runtime.js
+          node --check scripts/patch-dispatch-print.js
           node --check scripts/smoke-integrity.js
 
       - name: Validate static Maestro JSON
@@ -46,17 +53,33 @@ jobs:
       - name: Run application integrity smoke test
         run: node scripts/smoke-integrity.js
 
+      - name: Validate dispatch print source
+        run: node - <<'NODE'
+const fs = require('fs');
+const app = fs.readFileSync('app.js','utf8');
+const required = [
+  'function makePrintHtml(rows,from,to,logo){',
+  'table-layout:fixed',
+  'overflow-wrap:break-word',
+  '<colgroup>',
+  'REPARTOS / PLANILLA DE DESPACHOS'
+];
+for (const marker of required) if (!app.includes(marker)) throw new Error('Falta marcador de impresión: '+marker);
+if (app.includes('class=\\\\"num\\\\"')) throw new Error('Persisten escapes de comillas defectuosos en la impresión.');
+console.log('DISPATCH PRINT CHECK: PASS');
+NODE
+
       - name: Patch app shell
         run: node scripts/inject-ine-maestro.js
 
       - name: Commit patch if needed
         run: |
-          if git diff --quiet -- index.html ine-engine-maestro.js; then
+          if git diff --quiet -- index.html ine-engine-maestro.js app.js; then
             echo 'No patch required.'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add index.html ine-engine-maestro.js
-          git commit -m 'build: apply non-breaking runtime hardening [skip ci]'
+          git add index.html ine-engine-maestro.js app.js
+          git commit -m 'fix: repair dispatch print layout and text wrapping [skip ci]'
           git push
