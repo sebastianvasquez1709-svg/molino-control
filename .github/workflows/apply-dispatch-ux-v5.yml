@@ -1,0 +1,57 @@
+name: Apply Dispatch UX V5
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-dispatch-ux-v5.yml'
+      - 'scripts/patch-dispatch-ux-v5.js'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply professional dispatch and weather patch
+        run: node scripts/patch-dispatch-ux-v5.js
+
+      - name: Validate application syntax
+        run: node --check app.js
+
+      - name: Validate dispatch UX markers
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const app=fs.readFileSync('app.js','utf8');
+          const required=[
+            '// DISPATCH_UX_V5_PRO',
+            'window.deleteDispatchById=',
+            'window.checkDispatchWeather=',
+            'dispatchDeleteBtn',
+            'dispatchProHero',
+            'dispatch-ux-v5',
+            'geocodeDestination=geocodeDestinationV5'
+          ];
+          for(const marker of required){if(!app.includes(marker))throw new Error('Falta marcador: '+marker)}
+          if(!/state\.dispatchPlan\.splice\(idx,1\)/.test(app))throw new Error('La eliminación no es individual.')
+          if(!/Los demás registros permanecerán intactos/.test(app))throw new Error('Falta confirmación segura de eliminación.')
+          console.log('DISPATCH UX V5 CHECK: PASS');
+          NODE
+
+      - name: Commit corrected app
+        run: |
+          if git diff --quiet -- app.js; then
+            echo 'No changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app.js
+          git commit -m 'fix: finalize dispatch ux and weather reliability [skip ci]'
+          git push
