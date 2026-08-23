@@ -16,7 +16,6 @@ const injection=String.raw`
     tableWrap.classList.add('docScrollWrap');
     const table=tableWrap.querySelector('table');
     if(table)table.classList.add('docScrollableTable');
-
     const old=card.querySelector('.docScrollControls');
     if(old)old.remove();
     const controls=document.createElement('div');
@@ -41,29 +40,23 @@ const injection=String.raw`
   const origGuide=renderGuides; renderGuides=function(){const out=origGuide.apply(this,arguments);enhance();return out};
   const style=document.createElement('style');
   style.id='document-scroll-v3';
-  style.textContent=`
-    .docScrollControls{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin:0 18px 8px;position:relative;z-index:3}
-    .docScrollControls .docScrollHint{margin-right:auto;font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#667085}
-    .docScrollControls button{min-width:34px;height:30px;padding:0 9px;border-radius:9px;font-size:15px;line-height:1;font-weight:900}
-    .docScrollWrap{position:relative;max-height:58vh;min-height:180px;overflow:auto!important;scroll-behavior:smooth;scrollbar-gutter:stable both-edges;border:1px solid #dbe5ef;border-radius:12px;background:#fff}
-    .docScrollWrap::-webkit-scrollbar{width:12px;height:12px}
-    .docScrollWrap::-webkit-scrollbar-track{background:#eef2f6;border-radius:10px}
-    .docScrollWrap::-webkit-scrollbar-thumb{background:#9aa9ba;border-radius:10px;border:3px solid #eef2f6}
-    .docScrollWrap::-webkit-scrollbar-thumb:hover{background:#6f8196}
-    .docScrollWrap{scrollbar-color:#9aa9ba #eef2f6;scrollbar-width:auto}
-    .docScrollableTable{min-width:980px;margin:0}
-    .docScrollableTable thead th{position:sticky;top:0;z-index:2;background:#f8fafc;box-shadow:0 1px 0 #dbe5ef}
-    .docScrollWrap td,.docScrollWrap th{white-space:nowrap}
-    .docScrollWrap td:nth-child(2),.docScrollWrap td:nth-child(3),.docScrollWrap td:nth-child(4),.docScrollWrap th:nth-child(2),.docScrollWrap th:nth-child(3),.docScrollWrap th:nth-child(4){white-space:normal;min-width:150px}
-    .docScrollWrap .docRowActions{display:flex;flex-wrap:wrap;gap:5px}
-    .docScrollControls.isTop [data-scroll-top],.docScrollControls.isBottom [data-scroll-bottom]{opacity:.45;pointer-events:none}
-    @media(max-width:680px){
-      .docScrollControls{margin:0 10px 8px}
-      .docScrollControls .docScrollHint{font-size:9px}
-      .docScrollWrap{max-height:62vh;min-height:160px}
-      .docScrollableTable{min-width:900px}
-    }
-  `;
+  style.textContent=''
+    +'.docScrollControls{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin:0 18px 8px;position:relative;z-index:3}'
+    +'.docScrollControls .docScrollHint{margin-right:auto;font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#667085}'
+    +'.docScrollControls button{min-width:34px;height:30px;padding:0 9px;border-radius:9px;font-size:15px;line-height:1;font-weight:900}'
+    +'.docScrollWrap{position:relative;max-height:58vh;min-height:180px;overflow:auto!important;scroll-behavior:smooth;scrollbar-gutter:stable both-edges;border:1px solid #dbe5ef;border-radius:12px;background:#fff}'
+    +'.docScrollWrap::-webkit-scrollbar{width:12px;height:12px}'
+    +'.docScrollWrap::-webkit-scrollbar-track{background:#eef2f6;border-radius:10px}'
+    +'.docScrollWrap::-webkit-scrollbar-thumb{background:#9aa9ba;border-radius:10px;border:3px solid #eef2f6}'
+    +'.docScrollWrap::-webkit-scrollbar-thumb:hover{background:#6f8196}'
+    +'.docScrollWrap{scrollbar-color:#9aa9ba #eef2f6;scrollbar-width:auto}'
+    +'.docScrollableTable{min-width:980px;margin:0}'
+    +'.docScrollableTable thead th{position:sticky;top:0;z-index:2;background:#f8fafc;box-shadow:0 1px 0 #dbe5ef}'
+    +'.docScrollWrap td,.docScrollWrap th{white-space:nowrap}'
+    +'.docScrollWrap td:nth-child(2),.docScrollWrap td:nth-child(3),.docScrollWrap td:nth-child(4),.docScrollWrap th:nth-child(2),.docScrollWrap th:nth-child(3),.docScrollWrap th:nth-child(4){white-space:normal;min-width:150px}'
+    +'.docScrollWrap .docRowActions{display:flex;flex-wrap:wrap;gap:5px}'
+    +'.docScrollControls.isTop [data-scroll-top],.docScrollControls.isBottom [data-scroll-bottom]{opacity:.45;pointer-events:none}'
+    +'@media(max-width:680px){.docScrollControls{margin:0 10px 8px}.docScrollControls .docScrollHint{font-size:9px}.docScrollWrap{max-height:62vh;min-height:160px}.docScrollableTable{min-width:900px}}';
   document.head.appendChild(style);
   window.__enhanceDocumentScrollV3=enhance;
 })();
