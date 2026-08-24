@@ -1,0 +1,115 @@
+(()=>{
+'use strict';
+const VERSION='SACOS_GRANEL_REPORT_V11_EXCEL_AUDIT';
+const MONTHS=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const esc=v=>String(v??'').replace(/[&<>\"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[m]));
+const num=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+const fmt=v=>num(v).toLocaleString('es-CL',{maximumFractionDigits:2});
+const money=v=>'$ '+num(v).toLocaleString('es-CL',{maximumFractionDigits:0});
+const monthSort=m=>MONTHS.indexOf(String(m||'').toLowerCase());
+let model={years:[],periods:[],selected:null,report:null,mode:'granel',tab:'summary',loading:false,query:''};
+
+function css(){
+ if(document.getElementById('reportsV11Css'))return;
+ const s=document.createElement('style');s.id='reportsV11Css';s.textContent=`
+ .r11{font-family:Inter,Segoe UI,Arial,sans-serif;color:#172033}
+ .r11Header{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;padding:22px 24px;border-radius:18px;background:linear-gradient(135deg,#10386f,#1c5aa4);color:#fff;box-shadow:0 16px 38px rgba(15,53,109,.15)}
+ .r11Header h1{margin:4px 0 6px;font-size:27px;letter-spacing:-.4px}.r11Header p{margin:0;color:rgba(255,255,255,.82);font-size:12px}.r11Eyebrow{font-size:10px;letter-spacing:.14em;font-weight:800;color:#dceaff}.r11Actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.r11Actions select{min-width:190px;background:#fff;color:#123a78;min-height:42px}
+ .r11Kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:14px}.r11Kpi{background:#fff;border:1px solid #dce6f1;border-radius:14px;padding:14px;min-height:94px;display:flex;flex-direction:column;justify-content:center}.r11Kpi small{color:#667085;font-size:10px;text-transform:uppercase;letter-spacing:.05em}.r11Kpi b{color:#123d77;font-size:22px;margin-top:4px}.r11Kpi span{font-size:10px;color:#667085;margin-top:2px}
+ .r11Toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:14px}.r11Tabs{display:flex;gap:7px;flex-wrap:wrap;margin:14px 0}.r11Tabs button{border:1px solid #d7e2ef;background:#fff;color:#123a78;border-radius:10px;padding:9px 12px;font-weight:800}.r11Tabs button.active{background:#123a78;color:#fff;border-color:#123a78}
+ .r11Card{background:#fff;border:1px solid #dce6f1;border-radius:16px;padding:16px;box-shadow:0 6px 20px rgba(15,53,109,.04);margin-top:14px}.r11Card h3{margin:0 0 8px;color:#123a78}.r11Note{font-size:11px;color:#667085}.r11Grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.r11TableWrap{width:100%;overflow-x:auto;overflow-y:visible;border:1px solid #dde6f0;border-radius:12px}.r11Table{width:100%;border-collapse:separate;border-spacing:0;min-width:760px;background:#fff}.r11Table th{position:sticky;top:0;background:#f3f6fa;color:#344054;text-transform:uppercase;font-size:10px;letter-spacing:.05em;padding:10px 11px;text-align:left;border-bottom:1px solid #d9e2ed;z-index:1}.r11Table td{padding:10px 11px;border-bottom:1px solid #edf1f6;font-size:12px;vertical-align:top}.r11Table tbody tr:nth-child(even){background:#fbfcfe}.r11Table tbody tr:hover{background:#f2f7fd}.r11Num{text-align:right;white-space:nowrap}.r11Total td{font-weight:800;border-top:2px solid #123a78;background:#f7faff}
+ .r11Pill{display:inline-flex;padding:4px 8px;border-radius:999px;background:#edf4fc;color:#123a78;font-size:10px;font-weight:800}.r11Ok{background:#eaf8ef;color:#137333}.r11Warn{background:#fff5dc;color:#966c00}.r11Bad{background:#fff0f0;color:#ad1f1f}
+ .r11AuditGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.r11AuditItem{padding:12px;border:1px solid #dfe7ef;border-radius:11px;background:#f8fafc}.r11AuditItem small{display:block;color:#667085;font-size:10px}.r11AuditItem b{display:block;color:#123a78;font-size:18px;margin-top:4px}.r11Formula{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.45;background:#f7f9fc;border:1px solid #dce5ef;border-radius:10px;padding:12px;white-space:pre-wrap;overflow-x:auto}
+ .r11Search{min-width:260px}.r11Source{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 12px;border:1px solid #dce5ef;border-radius:11px;background:#f8fafc;margin-top:12px;font-size:11px;color:#475467}.r11Empty{padding:35px;text-align:center;color:#667085;background:#f8fafc;border:1px dashed #d5e0ec;border-radius:12px}
+ @media(max-width:1200px){.r11Kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.r11AuditGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+ @media(max-width:820px){.r11Header{flex-direction:column}.r11Grid2{grid-template-columns:1fr}.r11Kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.r11Header h1{font-size:23px}}
+ @media(max-width:520px){.r11Kpis,.r11AuditGrid{grid-template-columns:1fr}.r11Actions select,.r11Actions button{width:100%}.r11Search{width:100%;min-width:0}}
+ @media print{body{background:#fff}.r11 .noPrint{display:none!important}.r11Card{box-shadow:none}.r11TableWrap{overflow:visible}.r11Table{min-width:0}.r11Header{box-shadow:none}.r11Tabs{display:none}}
+ `;document.head.appendChild(s);
+}
+
+async function getClient(){
+ if(!window.MolinoCloud){await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='/molino-cloud.js?v=r11';s.onload=resolve;s.onerror=reject;document.head.appendChild(s)})}
+ return window.MolinoCloud.client();
+}
+async function rpc(name,args){
+ const sb=await getClient();
+ const {data,error}=await sb.rpc(name,args||{});
+ if(error)throw error;
+ return data;
+}
+async function loadPeriods(){
+ try{
+  const d=await rpc('molino_sacos_granel_report_v3',{p_anio:null,p_mes:null});
+  if(!d?.ok)throw new Error(d?.message||'El Maestro no tiene un período válido.');
+  model.periods=Array.isArray(d.periods)?d.periods:[];
+  model.selected=d.selected?.anio&&d.selected?.mes?`${d.selected.anio}-${String(d.selected.mes).toLowerCase()}`:null;
+  model.years=[...new Set(model.periods.map(x=>String(x.anio)))].sort().reverse();
+  return d;
+ }catch(e){
+  const fallback=window.state?.snapshot?.metrics?.counter?.periods||window.molinoState?.counter?.periods||{};
+  const p=Object.values(fallback);
+  if(p.length){
+   model.periods=p.map(x=>({anio:String(x.key||'').slice(0,4)||new Date().getFullYear(),mes:String(x.key||'').slice(5)||'',sacos_units:num(x.sacosUnits),sacos_kg:num(x.sacosKg),granel_kg:num(x.granelKg),total_kg:num(x.totalKg),total_neto:num(x.totalNeto||0),rows:num(x.rows)}));
+   model.years=[...new Set(model.periods.map(x=>String(x.anio)))].sort().reverse();
+   model.selected=model.periods[0]?`${model.periods[0].anio}-${model.periods[0].mes}`:null;
+   return {ok:true,version:'LOCAL_FALLBACK',periods:model.periods,selected:{anio:model.periods[0]?.anio,mes:model.periods[0]?.mes},qa:{},families:[],sacos_matrix:[],sacos_detail:[],granel_detail:[],granel_groups:[]};
+  }
+  throw e;
+ }
+}
+async function loadSelected(){
+ if(!model.selected)return null;
+ const [y,m]=model.selected.split('-');
+ const d=await rpc('molino_sacos_granel_report_v3',{p_anio:y,p_mes:m});
+ if(!d?.ok)throw new Error(d?.message||'No hay información para el período.');
+ model.report=d;return d;
+}
+function selectedPeriod(){return model.periods.find(x=>`${x.anio}-${String(x.mes).toLowerCase()}`===model.selected)||null}
+function labelPeriod(p){if(!p)return 'Sin período';const m=String(p.mes||'').toLowerCase();return `${m?m.charAt(0).toUpperCase()+m.slice(1):''} ${p.anio||''}`.trim()}
+function sum(rows,key){return (rows||[]).reduce((a,r)=>a+num(r?.[key]),0)}
+function groupOrigins(rows){const m=new Map();for(const r of rows||[]){const k=String(r.origen||'SIN ORIGEN/DESTINO');const z=m.get(k)||{origen:k,kg:0,neto:0,rows:0};z.kg+=num(r.kg);z.neto+=num(r.neto);z.rows++;m.set(k,z)}return [...m.values()].sort((a,b)=>b.kg-a.kg)}
+function renderHeader(){
+ const p=selectedPeriod();const q=model.report?.qa||{};const source=model.report?.importacion||{};
+ const opts=model.periods.map(x=>{const k=`${x.anio}-${String(x.mes).toLowerCase()}`;return `<option value="${esc(k)}" ${k===model.selected?'selected':''}>${esc(labelPeriod(x))}</option>`}).join('');
+ const ok=Number(q.granel_af_mismatch_rows||0)===0;
+ return `<div class="r11Header"><div><div class="r11Eyebrow">MOLINOS SAN MIGUEL LTDA · CONTROL OPERATIVO</div><h1>Informes Sacos / Granel · V11</h1><p>${esc(labelPeriod(p))} · datos directamente del Excel Maestro almacenado en Supabase.</p></div><div class="r11Actions noPrint"><select id="r11Period">${opts||'<option>Sin períodos</option>'}</select><button class="secondary" type="button" id="r11Print">🖨️ Imprimir</button><button class="secondary" type="button" id="r11Csv">⬇️ CSV</button></div></div>
+ <div class="r11Source"><span>Fuente: <b>${esc(source.archivo||'Maestro activo')}</b> · ${esc(String(source.id||'').slice(0,12))}</span><span class="r11Pill ${ok?'r11Ok':'r11Warn'}">${ok?'✓ GRANEL AF = KG':'⚠ Revisar AF / KG'}</span></div>`;
+}
+function renderKpis(){const d=model.report||{},s=d.selected||{},p=selectedPeriod()||{};const sacU=num(p.sacos_units),sacKg=num(p.sacos_kg),grKg=num(p.granel_kg),tot=num(p.total_kg),net=num(p.total_neto);return `<div class="r11Kpis"><div class="r11Kpi"><small>Sacos / unidades</small><b>${fmt(sacU)}</b><span>VENTAS * SACOS</span></div><div class="r11Kpi"><small>KG sacos</small><b>${fmt(sacKg)}</b><span>Salida física</span></div><div class="r11Kpi"><small>KG granel</small><b>${fmt(grKg)}</b><span>Salida física de GRANEL</span></div><div class="r11Kpi"><small>KG total</small><b>${fmt(tot)}</b><span>Sacos + granel</span></div><div class="r11Kpi"><small>Neto total</small><b>${money(net)}</b><span>Columna AR del Maestro</span></div></div>`}
+function renderTabs(){const tabs=[['summary','Resumen'],['granel','Granel'],['granel_detail','Detalle granel'],['nestle','Nestlé'],['cpw','CPW'],['nestle_cpw','Nestlé + CPW'],['sacos','Sacos'],['audit','Auditoría fórmula']];return `<div class="r11Tabs noPrint">${tabs.map(([k,t])=>`<button type="button" class="${model.tab===k?'active':''}" data-r11-tab="${k}">${t}</button>`).join('')}</div>`}
+function renderSummary(){
+ const d=model.report||{};const gr=d.granel_groups||[];const org=groupOrigins(d.granel_detail||[]);const fam=d.families||[];const p=selectedPeriod()||{};
+ return `<div class="r11Grid2"><div class="r11Card"><h3>Resumen por clasificación</h3><div class="r11TableWrap"><table class="r11Table"><thead><tr><th>Clasificación</th><th>Filas</th><th class="r11Num">KG</th><th class="r11Num">Sacos</th><th class="r11Num">Neto</th></tr></thead><tbody>${fam.map(x=>`<tr><td><b>${esc(x.nombre)}</b></td><td>${fmt(x.rows)}</td><td class="r11Num">${fmt(x.kg)}</td><td class="r11Num">${fmt(x.sacos)}</td><td class="r11Num">${money(x.neto)}</td></tr>`).join('')||'<tr><td colspan="5" class="r11Empty">Sin datos</td></tr>'}</tbody></table></div></div><div class="r11Card"><h3>Granel por origen / destino</h3><div class="r11TableWrap"><table class="r11Table"><thead><tr><th>Origen / destino</th><th>Filas</th><th class="r11Num">KG</th><th class="r11Num">Neto</th></tr></thead><tbody>${org.map(x=>`<tr><td><b>${esc(x.origen)}</b></td><td>${fmt(x.rows)}</td><td class="r11Num">${fmt(x.kg)}</td><td class="r11Num">${money(x.neto)}</td></tr>`).join('')||'<tr><td colspan="4" class="r11Empty">Sin granel</td></tr>'}</tbody><tfoot><tr class="r11Total"><td>Total granel</td><td></td><td class="r11Num">${fmt(sum(d.granel_detail,'kg'))}</td><td class="r11Num">${money(sum(d.granel_detail,'neto'))}</td></tr></tfoot></table></div></div></div><div class="r11Card"><h3>Control de volumen</h3><div class="r11AuditGrid"><div class="r11AuditItem"><small>Filas válidas</small><b>${fmt(d.qa?.rows_valid)}</b></div><div class="r11AuditItem"><small>Filas sacos</small><b>${fmt(d.qa?.sacos_rows)}</b></div><div class="r11AuditItem"><small>Filas granel</small><b>${fmt(d.qa?.granel_rows)}</b></div><div class="r11AuditItem"><small>NC excluidas</small><b>${fmt(d.qa?.nc_rows_excluded)}</b></div></div><div class="r11Note" style="margin-top:8px">El total de granel mostrado es exclusivamente la SUMA de SALIDA (U) de filas cuyo S/G del Maestro es GRANEL. No se convierte a sacos.</div></div>`;
+}
+function renderGranel(){
+ const d=model.report||{},rows=d.granel_groups||[];const totalKg=sum(d.granel_detail,'kg'),totalN=sum(d.granel_detail,'neto');return `<div class="r11Card"><div class="r11Toolbar"><div><h3 style="margin-bottom:3px">Granel · resumen operativo</h3><div class="r11Note">Unidad oficial: KG. La columna VENTAS * SACOS del Maestro coincide con U/SALIDA en GRANEL.</div></div><input id="r11Search" class="r11Search" placeholder="Buscar origen o clasificación…" value="${esc(model.query)}"></div><div class="r11TableWrap" style="margin-top:12px"><table class="r11Table"><thead><tr><th>Origen / destino</th><th>Clasificación</th><th>Filas</th><th class="r11Num">KG</th><th class="r11Num">Neto</th></tr></thead><tbody>${rows.filter(x=>!model.query||`${x.origen} ${x.clasificacion}`.toLowerCase().includes(model.query.toLowerCase())).map(x=>`<tr><td><b>${esc(x.origen)}</b></td><td>${esc(x.clasificacion)}</td><td>${fmt(x.rows)}</td><td class="r11Num"><b>${fmt(x.kg)}</b></td><td class="r11Num">${money(x.neto)}</td></tr>`).join('')||'<tr><td colspan="5" class="r11Empty">No hay coincidencias.</td></tr>'}</tbody><tfoot><tr class="r11Total"><td colspan="3">TOTAL GRANEL</td><td class="r11Num">${fmt(totalKg)}</td><td class="r11Num">${money(totalN)}</td></tr></tfoot></table></div></div>`;
+}
+function renderGranelDetail(rows,title){const arr=rows||[];return `<div class="r11Card"><h3>${esc(title)}</h3><div class="r11TableWrap"><table class="r11Table"><thead><tr><th>Fecha</th><th>Folio</th><th>Origen / destino</th><th>Código</th><th>Producto</th><th>Detalle</th><th>Clasificación</th><th class="r11Num">KG</th><th class="r11Num">Neto</th></tr></thead><tbody>${arr.filter(x=>!model.query||[x.fecha,x.folio,x.origen,x.codigo,x.producto,x.detalle,x.clasificacion].join(' ').toLowerCase().includes(model.query.toLowerCase())).map(x=>`<tr><td>${esc(x.fecha||'')}</td><td>${esc(x.folio||'')}</td><td>${esc(x.origen||'')}</td><td>${esc(x.codigo||'')}</td><td>${esc(x.producto||'')}</td><td>${esc(x.detalle||'')}</td><td><span class="r11Pill">${esc(x.clasificacion||'')}</span></td><td class="r11Num"><b>${fmt(x.kg)}</b></td><td class="r11Num">${money(x.neto)}</td></tr>`).join('')||'<tr><td colspan="9" class="r11Empty">Sin movimientos de granel.</td></tr>'}</tbody><tfoot><tr class="r11Total"><td colspan="7">TOTAL</td><td class="r11Num">${fmt(sum(arr,'kg'))}</td><td class="r11Num">${money(sum(arr,'neto'))}</td></tr></tfoot></table></div></div>`}
+function renderSacos(){const d=model.report||{};const rows=d.families||[];const mx=d.sacos_matrix||[];return `<div class="r11Grid2"><div class="r11Card"><h3>Sacos por clasificación</h3><div class="r11TableWrap"><table class="r11Table"><thead><tr><th>Clasificación</th><th>Filas</th><th class="r11Num">Sacos</th><th class="r11Num">KG</th><th class="r11Num">Neto</th></tr></thead><tbody>${rows.filter(x=>num(x.sacos)>0).map(x=>`<tr><td>${esc(x.nombre)}</td><td>${fmt(x.rows)}</td><td class="r11Num"><b>${fmt(x.sacos)}</b></td><td class="r11Num">${fmt(x.kg)}</td><td class="r11Num">${money(x.neto)}</td></tr>`).join('')||'<tr><td colspan="5" class="r11Empty">Sin sacos.</td></tr>'}</tbody></table></div></div><div class="r11Card"><h3>Matriz de sacos · detalle / origen</h3><div class="r11TableWrap"><table class="r11Table"><thead><tr><th>Detalle</th><th>Origen / destino</th><th class="r11Num">Sacos</th><th class="r11Num">KG</th></tr></thead><tbody>${mx.map(x=>`<tr><td>${esc(x.detalle)}</td><td>${esc(x.origen)}</td><td class="r11Num">${fmt(x.sacos)}</td><td class="r11Num">${fmt(x.kg)}</td></tr>`).join('')||'<tr><td colspan="4" class="r11Empty">Sin matriz de sacos.</td></tr>'}</tbody></table></div></div></div>`}
+function renderAudit(){const d=model.report||{},q=d.qa||{};const ok=Number(q.granel_af_mismatch_rows||0)===0 && Number(q.negative_sacos_rows||0)===0 && Number(q.negative_granel_rows||0)===0;return `<div class="r11Card"><h3>Auditoría de fórmula y datos</h3><div class="r11AuditGrid"><div class="r11AuditItem"><small>GRANEL: AF ≠ U</small><b>${fmt(q.granel_af_mismatch_rows)}</b></div><div class="r11AuditItem"><small>Diferencia AF-U granel</small><b>${fmt(q.granel_af_mismatch_total)}</b></div><div class="r11AuditItem"><small>Filas NC excluidas</small><b>${fmt(q.nc_rows_excluded)}</b></div><div class="r11AuditItem"><small>Estado</small><b>${ok?'OK':'REVISAR'}</b></div></div><div class="r11Source"><span>Excel Maestro: <b>${esc(d.importacion?.archivo||'')}</b></span><span>${esc(String(d.importacion?.id||''))}</span></div><h3 style="margin-top:16px">Fórmula VENTAS * SACOS (AF)</h3><div class="r11Formula">IF(AC2=CODIGOS!J2:J8,U2,IF(AB2=CODIGOS!I2,U2/10,IF(P2=CODIGOS!J11,U2/25,IF(AC2=CODIGOS!J12,U2/800,IF(AC2=CODIGOS!J13,U2/800,IF(B2=CODIGOS!A39,U2/10,IF(B2=CODIGOS!A24,U2/10,U2/25)))))))</div><h3 style="margin-top:16px">Fórmula S/G (AX)</h3><div class="r11Formula">IF(AH2="GRANEL","GRANEL","SACOS")</div><div class="r11Note" style="margin-top:10px">Regla de presentación: GRANEL se informa en KG usando U/SALIDA. SACOS se informa en unidades AF y además en KG U. No se convierten KG de granel a sacos.</div></div>`}
+function body(){switch(model.tab){case'granel':return renderGranel();case'granel_detail':return renderGranelDetail(model.report?.granel_detail,'Detalle completo de granel');case'nestle':return renderGranelDetail(model.report?.granel_nestle,'NESTLÉ GRANELES');case'cpw':return renderGranelDetail(model.report?.granel_cpw,'CPW GRANELES');case'nestle_cpw':return renderGranelDetail(model.report?.granel_nestle_cpw,'NESTLÉ + CPW GRANELES');case'sacos':return renderSacos();case'audit':return renderAudit();default:return renderSummary()}}
+function mount(){
+ css();
+ const content=document.getElementById('content');if(!content)return;
+ const title=document.getElementById('pageTitle');if(title)title.textContent='Informes Sacos / Granel';
+ model.loading=true;content.innerHTML='<div class="card"><h3>🔎 Auditoría del Maestro en curso…</h3><div class="r11Note" style="margin-top:6px">Cargando períodos, fórmulas y movimientos sin utilizar datos inventados.</div></div>';
+ Promise.resolve().then(async()=>{await loadPeriods();await loadSelected();model.loading=false;draw();}).catch(e=>{model.loading=false;content.innerHTML='<div class="card"><h3>⚠️ No se pudo cargar el informe</h3><div class="status err">'+esc(e?.message||String(e))+'</div><p class="r11Note">El resto del sistema sigue disponible. Verifica que el Maestro esté validado en la nube.</p></div>'});
+}
+function draw(){
+ const content=document.getElementById('content');if(!content)return;content.innerHTML='<div class="r11">'+renderHeader()+renderKpis()+renderTabs()+'<div class="noPrint" style="margin:0"><div class="r11Toolbar"><span class="r11Pill">'+esc(model.mode==='granel'?'CONTROL GRANEL':'CONTROL SACOS')+'</span><input id="r11GlobalSearch" class="r11Search" placeholder="Buscar en el detalle…" value="'+esc(model.query)+'"></div></div>'+body()+'</div>';
+ const sel=document.getElementById('r11Period');if(sel)sel.onchange=async e=>{model.selected=e.target.value;model.query='';model.tab='summary';content.innerHTML='<div class="card"><h3>Cargando período…</h3></div>';try{await loadSelected();draw()}catch(err){content.innerHTML='<div class="card"><div class="status err">'+esc(err?.message||String(err))+'</div></div>'}};
+ document.querySelectorAll('[data-r11-tab]').forEach(b=>b.onclick=()=>{model.tab=b.dataset.r11Tab;draw()});
+ document.getElementById('r11GlobalSearch')?.addEventListener('input',e=>{model.query=e.target.value;draw()});
+ document.getElementById('r11Search')?.addEventListener('input',e=>{model.query=e.target.value;draw()});
+ document.getElementById('r11Print')?.addEventListener('click',printReport);
+ document.getElementById('r11Csv')?.addEventListener('click',exportCsv);
+}
+function printReport(){const d=model.report||{};const rows=model.tab==='granel_detail'?d.granel_detail:model.tab==='nestle'?d.granel_nestle:model.tab==='cpw'?d.granel_cpw:model.tab==='nestle_cpw'?d.granel_nestle_cpw:d.granel_detail;const html=`<!doctype html><html><head><meta charset="utf-8"><title>Informe Sacos Granel</title><style>@page{size:A4 landscape;margin:10mm}body{font-family:Arial,sans-serif;color:#172033;font-size:10px}h1{color:#123a78}table{width:100%;border-collapse:collapse;font-size:9px}th,td{border:1px solid #9aa8b8;padding:4px}th{background:#eef4fb;text-align:left}.num{text-align:right}</style></head><body><h1>Molinos San Miguel LTDA · Informes Sacos / Granel</h1><p>Período: ${esc(labelPeriod(selectedPeriod()))} · Fuente: ${esc(d.importacion?.archivo||'Maestro')}</p><p>Sacos: ${fmt(selectedPeriod()?.sacos_units)} · KG sacos: ${fmt(selectedPeriod()?.sacos_kg)} · KG granel: ${fmt(selectedPeriod()?.granel_kg)} · KG total: ${fmt(selectedPeriod()?.total_kg)}</p><table><thead><tr><th>Fecha</th><th>Folio</th><th>Origen</th><th>Código</th><th>Producto</th><th>Detalle</th><th>Clasificación</th><th>KG</th><th>Neto</th></tr></thead><tbody>${(rows||[]).map(x=>`<tr><td>${esc(x.fecha||'')}</td><td>${esc(x.folio||'')}</td><td>${esc(x.origen||'')}</td><td>${esc(x.codigo||'')}</td><td>${esc(x.producto||'')}</td><td>${esc(x.detalle||'')}</td><td>${esc(x.clasificacion||'')}</td><td class="num">${fmt(x.kg)}</td><td class="num">${money(x.neto)}</td></tr>`).join('')}</tbody></table><p>Auditoría: GRANEL AF≠U = ${fmt(d.qa?.granel_af_mismatch_rows)} filas. NC excluidas = ${fmt(d.qa?.nc_rows_excluded)}.</p></body></html>`;const w=window.open('','_blank','width=1300,height=900');if(!w){alert('El navegador bloqueó la impresión.');return}w.document.open();w.document.write(html);w.document.close();w.focus();setTimeout(()=>w.print(),300)}
+function exportCsv(){const d=model.report||{};const rows=[...(d.granel_detail||[]),...(d.sacos_detail||[])];if(!rows.length){toast?.('No hay filas para exportar.','warn');return}const head=['Periodo','S/G','Fecha','Folio','Origen/Destino','Código','Producto','Detalle','Clasificación','KG','Sacos','Neto'];const p=labelPeriod(selectedPeriod());const lines=rows.map(x=>[p,x.sacos!=null?'SACOS':'GRANEL',x.fecha,x.folio,x.origen,x.codigo,x.producto,x.detalle,x.clasificacion,x.kg,x.sacos??'',x.neto].map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';'));const a=document.createElement('a'),u=URL.createObjectURL(new Blob(['\ufeff'+[head.join(';'),...lines].join('\r\n')],{type:'text/csv;charset=utf-8'}));a.href=u;a.download='informe_sacos_granel_'+String(model.selected||'periodo')+'.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000)}
+
+const oldShow=window.show;
+function openV11(view){if(view==='counterExistence'){mount();return true}return false}
+window.MolinoReportsV11={version:VERSION,mount,openV11};
+window.addEventListener('load',()=>{document.addEventListener('click',e=>{const b=e.target?.closest?.('[data-view="counterExistence"]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();mount()},true)});
+})();
