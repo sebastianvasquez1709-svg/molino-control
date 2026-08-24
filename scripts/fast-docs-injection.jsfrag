@@ -2,66 +2,40 @@
 (function(){
   const originalShow=window.show;
   const DOC_VIEWS=new Set(['invoices','boletas','guides']);
+  const hideLoading=()=>{const o=document.getElementById('loadingOverlay');if(o)o.classList.remove('show');};
   const text=v=>String(v??'').trim();
   const norm=v=>typeof normalize==='function'?normalize(v):text(v).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
-  const sameClient=(row,c)=>{
-    const rr=norm(row?.rut||row?.RUT||'');
-    const cr=norm(c?.rut||c?.RUT||'');
-    if(rr&&cr&&rr===cr)return true;
-    const a=norm(row?.cliente||row?.razonSocial||row?.nombreCliente||'');
-    const b=norm(c?.nombre||c?.razon_social||c?.razonSocial||'');
-    return !!a&&!!b&&(a===b||a.includes(b)||b.includes(a));
-  };
-  const clientDocs=(c)=>({invoices:(state.snapshot?.invoices||[]).filter(r=>sameClient(r,c)),guides:(state.snapshot?.guides||[]).filter(r=>sameClient(r,c))});
+  const sameClient=(row,c)=>{const rr=norm(row?.rut||row?.RUT||'');const cr=norm(c?.rut||c?.RUT||'');if(rr&&cr&&rr===cr)return true;const a=norm(row?.cliente||row?.razonSocial||row?.nombreCliente||'');const b=norm(c?.nombre||c?.razon_social||c?.razonSocial||c?.nombre_fantasia||'');return !!a&&!!b&&(a===b||a.includes(b)||b.includes(a));};
+  const clientDocs=c=>({invoices:(state.snapshot?.invoices||[]).filter(r=>sameClient(r,c)),guides:(state.snapshot?.guides||[]).filter(r=>sameClient(r,c))});
   const docCount=r=>Array.isArray(r)?r.length:0;
   const field=(r,...keys)=>{for(const k of keys){if(r&&r[k]!=null&&String(r[k]).trim()!=='')return r[k]}return ''};
-  const escLocal=v=>typeof esc==='function'?esc(v):String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const escLocal=v=>typeof esc==='function'?esc(v):String(v??'').replace(/[&<>\"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[m]));
 
   window.openClientDocuments=function(key){
-    const clients=state.snapshot?.clients||[];
-    const c=clients.find(x=>String(x.key||x.rut||x.nombre||'')===String(key||''));
+    hideLoading();
+    const clients=state.snapshot?.clients||[];const c=clients.find(x=>String(x.key||x.rut||x.nombre||'')===String(key||''));
     if(!c){toast('No se encontró el cliente.','err');return;}
-    const docs=clientDocs(c);
-    $('pageTitle').textContent='Documentos de cliente';
-    $('nav').querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.view==='clients'));
-    $('content').innerHTML='<div class="card"><div class="sectionTitle"><div><span class="pill">CLIENTE</span><h3 style="margin:8px 0 4px">'+escLocal(c.nombre||'Cliente')+'</h3><div class="note">RUT: '+escLocal(typeof formatRut==='function'?formatRut(c.rut||''):c.rut||'')+'</div></div><button class="secondary" type="button" id="backClientDocs">← Volver a clientes</button></div><div class="kpiRow" style="margin:14px 0"><div class="kpi"><small>Facturas</small><b>'+docCount(docs.invoices)+'</b></div><div class="kpi"><small>Guías</small><b>'+docCount(docs.guides)+'</b></div><div class="kpi"><small>Documentos</small><b>'+docCount(docs.invoices)+docCount(docs.guides)+'</b></div><div class="kpi"><small>Destino</small><b style="font-size:14px">'+escLocal(destinationFromClient(c)||'No registrado')+'</b></div></div><div class="dataToolbar" style="margin-bottom:14px"><input id="clientDocQ" placeholder="Buscar dentro de facturas y guías: folio, producto, fecha, destino…"><button class="secondary" id="clientDocClear" type="button">Limpiar</button></div><div class="infoGrid"><div class="info"><small>Contacto</small><b>'+escLocal(clientContact(c).contacto||'No informado')+'</b></div><div class="info"><small>Teléfono</small><b>'+escLocal(clientContact(c).telefono||'No informado')+'</b></div><div class="info"><small>Email</small><b>'+escLocal(clientContact(c).email||'No informado')+'</b></div></div><div class="sectionTitle"><h3>💶 Facturas</h3></div><div id="clientInvoiceResults"></div><div class="sectionTitle"><h3>🚚 Guías de despacho</h3></div><div id="clientGuideResults"></div></div>';
-    const render=()=>{
-      const q=norm($('clientDocQ')?.value||'');
-      const inv=docs.invoices.filter(r=>!q||norm([field(r,'folio','numero','nro'),field(r,'fecha','date'),field(r,'cliente'),field(r,'rut'),field(r,'producto'),field(r,'detalle'),field(r,'total')].join(' ')).includes(q));
-      const gui=docs.guides.filter(r=>!q||norm([field(r,'folio','numero','nro','guia'),field(r,'fecha','date'),field(r,'cliente'),field(r,'rut'),field(r,'destino','direccion'),field(r,'oc','ordenCompra'),field(r,'producto'),field(r,'observacion')].join(' ')).includes(q));
+    const docs=clientDocs(c);$('pageTitle').textContent='Documentos de cliente';$('nav').querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset.view==='clients'));
+    $('content').innerHTML='<div class="card"><div class="sectionTitle"><div><span class="pill">CLIENTE</span><h3 style="margin:8px 0 4px">'+escLocal(c.nombre||c.razon_social||'Cliente')+'</h3><div class="note">RUT: '+escLocal(typeof formatRut==='function'?formatRut(c.rut||''):c.rut||'')+'</div></div><button class="secondary" type="button" id="backClientDocs">← Volver a clientes</button></div><div class="kpiRow" style="margin:14px 0"><div class="kpi"><small>Facturas</small><b>'+docCount(docs.invoices)+'</b></div><div class="kpi"><small>Guías</small><b>'+docCount(docs.guides)+'</b></div><div class="kpi"><small>Documentos</small><b>'+docCount(docs.invoices)+docCount(docs.guides)+'</b></div><div class="kpi"><small>Destino</small><b style="font-size:14px">'+escLocal(destinationFromClient(c)||'No registrado')+'</b></div></div><div class="dataToolbar" style="margin-bottom:14px"><input id="clientDocQ" placeholder="Buscar dentro de facturas y guías: folio, producto, fecha, destino…"><button class="secondary" id="clientDocClear" type="button">Limpiar</button></div><div class="infoGrid"><div class="info"><small>Contacto</small><b>'+escLocal(clientContact(c).contacto||'No informado')+'</b></div><div class="info"><small>Teléfono</small><b>'+escLocal(clientContact(c).telefono||'No informado')+'</b></div><div class="info"><small>Email</small><b>'+escLocal(clientContact(c).email||'No informado')+'</b></div></div><div class="sectionTitle"><h3>💶 Facturas</h3></div><div id="clientInvoiceResults"></div><div class="sectionTitle"><h3>🚚 Guías de despacho</h3></div><div id="clientGuideResults"></div></div>';
+    const render=()=>{const q=norm($('clientDocQ')?.value||'');const inv=docs.invoices.filter(r=>!q||norm([field(r,'folio','numero','nro'),field(r,'fecha','date'),field(r,'cliente'),field(r,'rut'),field(r,'producto'),field(r,'detalle'),field(r,'total')].join(' ')).includes(q));const gui=docs.guides.filter(r=>!q||norm([field(r,'folio','numero','nro','guia'),field(r,'fecha','date'),field(r,'cliente'),field(r,'rut'),field(r,'destino','direccion'),field(r,'oc','ordenCompra'),field(r,'producto'),field(r,'observacion')].join(' ')).includes(q));
       $('clientInvoiceResults').innerHTML=inv.length?'<div class="tableWrap"><table class="table"><thead><tr><th>Folio</th><th>Fecha</th><th>Detalle</th><th>Neto</th><th>IVA</th><th>Total</th></tr></thead><tbody>'+inv.slice(0,100).map(r=>'<tr><td><strong>'+escLocal(field(r,'folio','numero','nro'))+'</strong></td><td>'+escLocal(field(r,'fecha','date'))+'</td><td>'+escLocal(field(r,'producto','detalle'))+'</td><td>'+money(field(r,'neto'))+'</td><td>'+money(field(r,'iva'))+'</td><td><b>'+money(field(r,'total'))+'</b></td></tr>').join('')+'</tbody></table></div>':'<div class="empty">No hay facturas para este cliente.</div>';
       $('clientGuideResults').innerHTML=gui.length?'<div class="tableWrap"><table class="table"><thead><tr><th>Guía</th><th>Fecha</th><th>Destino</th><th>KG</th><th>Sacos</th><th>Estado</th></tr></thead><tbody>'+gui.slice(0,100).map(r=>'<tr><td><strong>'+escLocal(field(r,'folio','numero','nro','guia'))+'</strong></td><td>'+escLocal(field(r,'fecha','date'))+'</td><td>'+escLocal(field(r,'destino','direccion','direccionEntrega'))+'</td><td>'+money(field(r,'kg','totalKg','pesoKg'))+'</td><td>'+money(field(r,'sacos','totalSacos'))+'</td><td><span class="pill">'+escLocal(field(r,'estado','status')||'Emitida')+'</span></td></tr>').join('')+'</tbody></table></div>':'<div class="empty">No hay guías para este cliente.</div>';
     };
-    let timer; $('clientDocQ').oninput=()=>{clearTimeout(timer);timer=setTimeout(render,90)}; $('clientDocClear').onclick=()=>{$('clientDocQ').value='';render()}; $('backClientDocs').onclick=()=>originalShow('clients'); render();
+    let timer;$('clientDocQ').oninput=()=>{clearTimeout(timer);timer=setTimeout(render,90)};$('clientDocClear').onclick=()=>{$('clientDocQ').value='';render()};$('backClientDocs').onclick=()=>originalShow('clients');render();
   };
 
   function fastClients(){
-    const clients=state.snapshot?.clients||[];
-    $('pageTitle').textContent='Clientes';
+    hideLoading();const clients=state.snapshot?.clients||[];$('pageTitle').textContent='Clientes';
     $('content').innerHTML='<div class="card"><div class="sectionTitle"><div><span class="pill">CLIENTES</span><h3 style="margin-top:8px">Clientes y documentos</h3><div class="note">Busca un cliente y accede directamente a sus facturas y guías.</div></div><div class="toolbar"><input id="clientFastQ" class="searchInput grow" placeholder="Buscar por nombre, RUT, comuna o ciudad…" value="'+escLocal(state.search.clients||'')+'"><button class="secondary" id="clientFastClear" type="button">Limpiar</button></div></div><div class="searchStatus" id="clientFastStatus"></div><div id="clientFastList" class="grid clientGrid" style="margin-top:12px"></div></div>';
-    const render=()=>{
-      const val=text($('clientFastQ')?.value||'');state.search.clients=val;const f=!norm(val)?clients:clients.filter(c=>norm([c.nombre,c.rut,c.giro,c.comuna,c.ciudad].join(' ')).includes(norm(val)));
-      $('clientFastStatus').textContent=f.length+' cliente'+(f.length===1?'':'s')+' encontrado'+(f.length===1?'':'s')+'.';
-      $('clientFastList').innerHTML=f.slice(0,200).map(c=>{const d=clientDocs(c);return '<div class="clientCard"><div class="clientHead"><div><h4>'+escLocal(c.nombre||'Sin nombre')+'</h4><div class="note">'+escLocal(typeof formatRut==='function'?formatRut(c.rut||''):c.rut||'RUT no informado')+'</div><div class="note">'+escLocal([c.comuna,c.ciudad].filter(Boolean).join(' · ')||'Sin ubicación')+'</div></div><span class="pill">'+(docCount(d.invoices)+docCount(d.guides))+' docs</span></div><div class="kpiRow" style="grid-template-columns:1fr 1fr;margin-top:10px"><div class="kpi"><small>Facturas</small><b>'+docCount(d.invoices)+'</b></div><div class="kpi"><small>Guías</small><b>'+docCount(d.guides)+'</b></div></div><div class="toolbar" style="margin-top:10px"><button class="primary smallBtn" type="button" data-client-doc="'+escLocal(String(c.key||c.rut||c.nombre||''))+'">📄 Ver facturas y guías</button><button class="secondary smallBtn" type="button" onclick="window.editClientContact(\''+escLocal(String(c.key||''))+'\')">📍 Ficha</button></div></div>'}).join('')||'<div class="empty" style="grid-column:1/-1">No se encontraron clientes.</div>';
-      $('clientFastList').querySelectorAll('[data-client-doc]').forEach(b=>b.onclick=()=>window.openClientDocuments(b.dataset.clientDoc));
-    };
-    let timer; $('clientFastQ').oninput=()=>{clearTimeout(timer);timer=setTimeout(render,90)}; $('clientFastClear').onclick=()=>{$('clientFastQ').value='';render()}; render();
+    const render=()=>{const val=text($('clientFastQ')?.value||'');state.search.clients=val;const f=!norm(val)?clients:clients.filter(c=>norm([c.nombre,c.rut,c.giro,c.comuna,c.ciudad,c.razon_social].join(' ')).includes(norm(val)));$('clientFastStatus').textContent=f.length+' cliente'+(f.length===1?'':'s')+' encontrado'+(f.length===1?'':'s')+'.';$('clientFastList').innerHTML=f.slice(0,200).map(c=>{const d=clientDocs(c);return '<div class="clientCard"><div class="clientHead"><div><h4>'+escLocal(c.nombre||c.razon_social||'Sin nombre')+'</h4><div class="note">'+escLocal(typeof formatRut==='function'?formatRut(c.rut||''):c.rut||'RUT no informado')+'</div><div class="note">'+escLocal([c.comuna,c.ciudad].filter(Boolean).join(' · ')||'Sin ubicación')+'</div></div><span class="pill">'+(docCount(d.invoices)+docCount(d.guides))+' docs</span></div><div class="kpiRow" style="grid-template-columns:1fr 1fr;margin-top:10px"><div class="kpi"><small>Facturas</small><b>'+docCount(d.invoices)+'</b></div><div class="kpi"><small>Guías</small><b>'+docCount(d.guides)+'</b></div></div><div class="toolbar" style="margin-top:10px"><button class="primary smallBtn" type="button" data-client-doc="'+escLocal(String(c.key||c.rut||c.nombre||c.razon_social||''))+'">📄 Ver facturas y guías</button></div></div>'}).join('')||'<div class="empty" style="grid-column:1/-1">No se encontraron clientes.</div>'; $('clientFastList').querySelectorAll('[data-client-doc]').forEach(b=>b.onclick=()=>window.openClientDocuments(b.dataset.clientDoc));};
+    let timer;$('clientFastQ').oninput=()=>{clearTimeout(timer);timer=setTimeout(render,90)};$('clientFastClear').onclick=()=>{$('clientFastQ').value='';render()};render();
   }
 
   function fastShell(view,title,emoji){
-    $('pageTitle').textContent=title; $('content').innerHTML='<div class="card"><div class="sectionTitle"><div><span class="pill">'+emoji+' '+title.toUpperCase()+'</span><h3 style="margin-top:8px">Cargando registros…</h3><div class="note">Preparando la consulta sin bloquear la aplicación.</div></div></div><div class="progress"><div style="width:45%"></div></div></div>';
-    setTimeout(()=>{try{originalShow(view)}catch(e){$('content').innerHTML='<div class="card"><h3>⚠️ No se pudo abrir '+escLocal(title)+'</h3>'+status(escLocal(e?.message||e),'err')+'</div>'}},0);
+    hideLoading();$('pageTitle').textContent=title;$('content').innerHTML='<div class="card"><div class="sectionTitle"><div><span class="pill">'+emoji+' '+title.toUpperCase()+'</span><h3 style="margin-top:8px">Cargando registros…</h3><div class="note">Preparando la consulta sin bloquear la aplicación.</div></div></div><div class="progress"><div style="width:45%"></div></div></div>';
+    setTimeout(()=>{try{hideLoading();originalShow(view);requestAnimationFrame(hideLoading)}catch(e){hideLoading();$('content').innerHTML='<div class="card"><h3>⚠️ No se pudo abrir '+escLocal(title)+'</h3>'+status(escLocal(e?.message||e),'err')+'</div>'}},0);
   }
 
-  window.show=function(view){
-    if(view==='clients')return fastClients();
-    if(DOC_VIEWS.has(view))return fastShell(view,{invoices:'Facturas',boletas:'Boletas',guides:'Guías'}[view],{invoices:'💶',boletas:'🧾',guides:'🚚'}[view]);
-    return originalShow(view);
-  };
-
-  document.addEventListener('click',function(ev){
-    const btn=ev.target?.closest?.('[data-view]'); if(!btn)return;
-    const view=btn.dataset.view; if(view!=='clients'&&!DOC_VIEWS.has(view))return;
-    ev.preventDefault();ev.stopImmediatePropagation();window.show(view);
-  },true);
+  window.show=function(view){hideLoading();if(view==='clients')return fastClients();if(DOC_VIEWS.has(view))return fastShell(view,{invoices:'Facturas',boletas:'Boletas',guides:'Guías'}[view],{invoices:'💶',boletas:'🧾',guides:'🚚'}[view]);return originalShow(view);};
+  document.addEventListener('click',function(ev){const btn=ev.target?.closest?.('[data-view]');if(!btn)return;const view=btn.dataset.view;if(view!=='clients'&&!DOC_VIEWS.has(view))return;ev.preventDefault();ev.stopImmediatePropagation();hideLoading();window.show(view);},true);
 })();
