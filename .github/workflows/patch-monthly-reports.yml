@@ -1,0 +1,40 @@
+name: Wire monthly existence reports
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inject monthly report module
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          marker='<script src="/existencia-reportes-mensuales.js"></script>'
+          if marker not in s:
+              needle='<script src="app.js"></script>'
+              if needle not in s:
+                  raise SystemExit('No se encontró el cargador de app.js en index.html')
+              s=s.replace(needle, needle+'\n'+marker, 1)
+              p.write_text(s, encoding='utf-8')
+          print('monthly report module wired:', marker in s)
+      - name: Commit wiring
+        shell: bash
+        run: |
+          if git diff --quiet -- index.html; then
+            echo 'No wiring changes required.'
+            exit 0
+          fi
+          git config user.name 'molino-control-bot'
+          git config user.email 'molino-control-bot@users.noreply.github.com'
+          git add index.html
+          git commit -m 'feat: show monthly existence reports'
+          git push
