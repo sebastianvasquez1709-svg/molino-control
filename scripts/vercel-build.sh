@@ -3,11 +3,12 @@ set -eu
 # Stable build: reviewed Guides + fast document navigation + audited Sacos/Granel counter.
 node scripts/patch-guides-professional-v1.js
 node scripts/patch-fast-docs-v1.js
-node scripts/patch-counter-sacogranel-v1.js
+node scripts/patch-counter-sacogranel-v2.js
 node --check app.js
 node --check scripts/patch-guides-professional-v1.js
 node --check scripts/patch-fast-docs-v1.js
-node --check scripts/patch-counter-sacogranel-v1.js
+node --check scripts/patch-counter-sacogranel-v2.js
+node --check scripts/counter-worker-frag.js
 node --check excel-worker.js
 node --check ine-engine-maestro.js
 node - <<'NODE'
