@@ -1,7 +1,16 @@
 #!/bin/sh
 set -eu
 
-echo '=== MOLINO CONTROL · PRODUCTION PREFLIGHT ==='
+echo '=== MOLINO CONTROL · TRANSACTIONAL PREFLIGHT ==='
+ROOT="$PWD"
+ORIG_APP_SHA="$(sha256sum app.js | awk '{print $1}')"
+BUILD_DIR="$(mktemp -d /tmp/molino-control-build.XXXXXX)"
+cleanup(){ rm -rf "$BUILD_DIR"; }
+trap cleanup EXIT INT TERM
+
+# Never patch the checked-out source directly. Work on an isolated build copy.
+tar --exclude='./.git' --exclude='./.vercel' --exclude='./node_modules' --exclude='./public' -cf - . | tar -xf - -C "$BUILD_DIR"
+cd "$BUILD_DIR"
 
 check_core(){
   node --check app.js
@@ -14,17 +23,20 @@ check_core(){
 check_fragment(){
   label="$1"
   file="$2"
+  [ -f "$file" ] || { echo "MISSING FRAGMENT: $file" >&2; exit 1; }
   echo "--- FRAGMENT CHECK: $label"
   node --check < "$file"
 }
 
 run_patch(){
   script="$1"
+  [ -f "$script" ] || { echo "MISSING PATCH: $script" >&2; exit 1; }
   echo "--- PATCH: $script"
   node "$script"
   check_core
 }
 
+# Apply the same production patches, but only inside the isolated build workspace.
 run_patch scripts/patch-cloud-persistence-v1.js
 run_patch scripts/patch-guides-professional-v1.js
 run_patch scripts/patch-fast-docs-v1.js
@@ -50,25 +62,26 @@ const report=fs.readFileSync('reports-maestro-v11.js','utf8');
 const dispatch=fs.readFileSync('dispatch-controls-v12.js','utf8');
 const guides=fs.readFileSync('scripts/guides-renderer.jsfrag','utf8');
 const fast=fs.readFileSync('scripts/fast-docs-injection.jsfrag','utf8');
-if(!app.includes('function renderGuides(){'))throw new Error('Falta Guías profesional.');
-if(!app.includes('FAST DOCUMENT MODULES V1'))throw new Error('Falta optimización documental.');
-if(!app.includes('function renderInvoices(){')||!app.includes('function renderBoletas(){'))throw new Error('Facturas/Boletas fuera de servicio.');
-if(!app.includes('function renderSacosGranel(){'))throw new Error('Falta contador Sacos/Granel.');
-if(!app.includes("['counterExistence','📊 Informes Sacos / Granel']"))throw new Error('Falta navegación de informes Sacos/Granel.');
-if(!app.includes('MolinoDispatchBridge'))throw new Error('Falta bridge seguro de Despachos.');
-if(!dispatch.includes('data-dv12-edit')||!dispatch.includes('data-dv12-delete'))throw new Error('Faltan acciones de modificar/eliminar despacho.');
-if(!dispatch.includes('dispatchEnhancedV12'))throw new Error('Falta corrección de scroll de despachos.');
-if(!worker.includes('COUNTER SACOS GRANEL V1'))throw new Error('Falta motor del contador en worker.');
-if(!report.includes('molino_sacos_granel_report_v3'))throw new Error('Falta RPC V11 de informes.');
-if(!report.includes('GRANEL AF = KG'))throw new Error('Falta auditoría específica de granel.');
-if(report.includes('JULY_SNAPSHOT'))throw new Error('El informe V11 no puede contener snapshots hardcodeados.');
-if(report.includes("toast?.('No hay filas para exportar.','warn')"))throw new Error('Quedó una referencia toast no segura en Reportes V11.');
-if(!guides.includes('const csvCell=')||!guides.includes('const csvLine='))throw new Error('Guías no usa helpers CSV seguros.');
-if((app.match(/FAST DOCUMENT MODULES V1/g)||[]).length!==1)throw new Error('La inyección FAST DOCUMENTS quedó duplicada.');
-if((app.match(/MolinoDispatchBridge/g)||[]).length!==1)throw new Error('El bridge de Despachos quedó duplicado.');
-if((app.match(/REPORTS SACOS\/GRANEL UNDEFINED-REFERENCE GUARD V1/g)||[]).length!==1)throw new Error('El guard de informes quedó duplicado.');
-if((app.match(/FORMULA_ZERO_ROWS_GUARD_V1/g)||[]).length!==1)throw new Error('El guard formulaZeroRows quedó duplicado.');
-if((fast.match(/FAST DOCUMENT MODULES V1/g)||[]).length!==1)throw new Error('Fragmento FAST DOCUMENTS inválido.');
+const assert=(ok,msg)=>{if(!ok)throw new Error(msg)};
+assert(app.includes('function renderGuides(){'),'Falta Guías profesional.');
+assert(app.includes('FAST DOCUMENT MODULES V1'),'Falta optimización documental.');
+assert(app.includes('function renderInvoices(){')&&app.includes('function renderBoletas(){'),'Facturas/Boletas fuera de servicio.');
+assert(app.includes('function renderSacosGranel(){'),'Falta contador Sacos/Granel.');
+assert(app.includes("['counterExistence','📊 Informes Sacos / Granel']"),'Falta navegación de informes Sacos/Granel.');
+assert(app.includes('MolinoDispatchBridge'),'Falta bridge seguro de Despachos.');
+assert(dispatch.includes('data-dv12-edit')&&dispatch.includes('data-dv12-delete'),'Faltan acciones de modificar/eliminar despacho.');
+assert(dispatch.includes('dispatchEnhancedV12'),'Falta corrección de scroll de despachos.');
+assert(worker.includes('COUNTER SACOS GRANEL V1'),'Falta motor del contador en worker.');
+assert(report.includes('molino_sacos_granel_report_v3'),'Falta RPC V11 de informes.');
+assert(report.includes('GRANEL AF = KG'),'Falta auditoría específica de granel.');
+assert(!report.includes('JULY_SNAPSHOT'),'El informe V11 no puede contener snapshots hardcodeados.');
+assert(!report.includes("toast?.('No hay filas para exportar.','warn')"),'Quedó una referencia toast no segura en Reportes V11.');
+assert(guides.includes('const csvCell=')&&guides.includes('const csvLine='),'Guías no usa helpers CSV seguros.');
+assert((app.match(/FAST DOCUMENT MODULES V1/g)||[]).length===1,'La inyección FAST DOCUMENTS quedó duplicada.');
+assert((app.match(/MolinoDispatchBridge/g)||[]).length===1,'El bridge de Despachos quedó duplicado.');
+assert((app.match(/REPORTS SACOS\/GRANEL UNDEFINED-REFERENCE GUARD V1/g)||[]).length===1,'El guard de informes quedó duplicado.');
+assert((app.match(/FORMULA_ZERO_ROWS_GUARD_V1/g)||[]).length===1,'El guard formulaZeroRows quedó duplicado.');
+assert((fast.match(/FAST DOCUMENT MODULES V1/g)||[]).length===1,'Fragmento FAST DOCUMENTS inválido.');
 console.log('CORE MODULES STATIC CHECK: PASS');
 console.log('GUIDES RENDERER STATIC CHECK: PASS');
 console.log('DISPATCH CONTROLS V12 CHECK: PASS');
@@ -101,4 +114,10 @@ if(pub.includes('ine-sacos-granel-automatico-v4.js'))throw new Error('No se debe
 console.log('FINAL MODULE INDEX INTEGRATION: PASS');
 NODE
 
-echo '=== MOLINO CONTROL · BUILD READY ==='
+cd "$ROOT"
+AFTER_APP_SHA="$(sha256sum app.js | awk '{print $1}')"
+[ "$ORIG_APP_SHA" = "$AFTER_APP_SHA" ] || { echo 'SOURCE MUTATION DETECTED: app.js changed outside build workspace' >&2; exit 1; }
+rm -rf public
+cp -a "$BUILD_DIR/public" "$ROOT/public"
+
+echo '=== MOLINO CONTROL · BUILD READY · SOURCE UNCHANGED ==='
