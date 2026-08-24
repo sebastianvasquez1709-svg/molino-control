@@ -7,6 +7,7 @@ node scripts/patch-fast-docs-v1.js
 node scripts/patch-counter-sacogranel-v2.js
 node scripts/patch-counter-snapshot-compat-v1.js
 node scripts/patch-existence-sacogranel-reports-v1.js
+node scripts/patch-reports-sacos-undefined-v1.js
 node --check app.js
 node --check scripts/patch-cloud-persistence-v1.js
 node --check scripts/patch-guides-professional-v1.js
@@ -14,6 +15,7 @@ node --check scripts/patch-fast-docs-v1.js
 node --check scripts/patch-counter-sacogranel-v2.js
 node --check scripts/patch-counter-snapshot-compat-v1.js
 node --check scripts/patch-existence-sacogranel-reports-v1.js
+node --check scripts/patch-reports-sacos-undefined-v1.js
 node --check < scripts/existence-sacogranel-reports-v1.jsfrag
 node --check scripts/counter-worker-frag.js
 node --check excel-worker.js
@@ -49,8 +51,10 @@ if(!auto.includes('return f>1?kg(r)/f:kg(r)'))throw new Error('Falta fórmula Ve
 if(!auto.includes("filter(x=>!isNc(x))"))throw new Error('Las NC no están excluidas del contador.');
 if(!auto.includes('TOTAL SACOS KG')||!auto.includes('TOTAL GRANEL'))throw new Error('Faltan totales de impresión.');
 if(!auto.includes('Imprimir 3 formatos'))throw new Error('Falta impresión conjunta de los tres formatos.');
+if(!app.includes('REPORTS SACOS/GRANEL UNDEFINED-REFERENCE GUARD V1'))throw new Error('Falta guard contra referencia legacy sacos.');
 console.log('CORE MODULES STATIC CHECK: PASS');
 console.log('MAESTRO SACOS/GRANEL PRINT ENGINE CHECK: PASS');
+console.log('REPORTS SACOS/GRANEL UNDEFINED-REFERENCE GUARD CHECK: PASS');
 NODE
 rm -rf public
 mkdir -p public
