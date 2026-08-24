@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-# Stable build: reviewed Guides + fast document navigation + audited Sacos/Granel counter + existence reports.
+# Stable build: reviewed Guides + fast document navigation + audited Sacos/Granel counter + existence reports + automatic INE/Sacos/Granel registry.
 node scripts/patch-guides-professional-v1.js
 node scripts/patch-fast-docs-v1.js
 node scripts/patch-counter-sacogranel-v2.js
@@ -16,6 +16,7 @@ node --check < scripts/existence-sacogranel-reports-v1.jsfrag
 node --check scripts/counter-worker-frag.js
 node --check excel-worker.js
 node --check ine-engine-maestro.js
+node --check ine-sacos-granel-automatico-v4.js
 node - <<'NODE'
 const fs=require('fs');
 const app=fs.readFileSync('app.js','utf8');
@@ -34,9 +35,22 @@ if(!app.includes('counterExistence:renderExistenceReports'))throw new Error('Fal
 if(!app.includes('COUNTER_SNAPSHOT_COMPAT_V1'))throw new Error('Falta compatibilidad con snapshots anteriores del Maestro.');
 if(!worker.includes('COUNTER SACOS GRANEL V1'))throw new Error('Falta el motor del contador en excel-worker.js.');
 if(!worker.includes('counter, iva: iv'))throw new Error('El snapshot no publica metrics.counter.');
-console.log('GUIDES + FAST DOCUMENT NAV + CLIENT DOCUMENT SEARCH + COUNTER SACOS/GRANEL + SNAPSHOT COMPAT + EXISTENCE SACOS/GRANEL REPORTS: PASS');
+console.log('CORE MODULES STATIC CHECK: PASS');
 NODE
 rm -rf public
 mkdir -p public
 find . -maxdepth 1 -type f ! -name 'vercel.json' -exec cp -p {} public/ \;
 if [ -d docs ]; then cp -R docs public/; fi
+node - <<'NODE'
+const fs=require('fs');
+const p='public/index.html';
+let s=fs.readFileSync(p,'utf8');
+const marker='<script src="/ine-sacos-granel-automatico-v4.js"></script>';
+if(!s.includes(marker)){
+  if(s.includes('</body></html>')) s=s.replace('</body></html>', marker+'\n</body></html>');
+  else throw new Error('No se encontró cierre de index.html para integrar el módulo automático.');
+  fs.writeFileSync(p,s);
+}
+if(!fs.readFileSync(p,'utf8').includes('ine-sacos-granel-automatico-v4.js'))throw new Error('No se integró el módulo automático al index publicado.');
+console.log('AUTO INE/SACOS/GRANEL INDEX INTEGRATION: PASS');
+NODE
