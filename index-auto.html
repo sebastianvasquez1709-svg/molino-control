@@ -9,10 +9,11 @@
   frame.addEventListener('load',()=>{
     try{
       const doc=frame.contentDocument;
-      if(!doc||doc.getElementById('autoV9Injected'))return;
-      const marker=doc.createElement('meta');marker.id='autoV9Injected';doc.head.appendChild(marker);
-      const s=doc.createElement('script');s.src='/ine-sacos-granel-automatico-v9.js?v=excel-format-v9';doc.body.appendChild(s);
-    }catch(e){console.error('Excel V9 reports injection failed',e)}
+      if(!doc||doc.getElementById('autoV10Injected'))return;
+      const marker=doc.createElement('meta');marker.id='autoV10Injected';doc.head.appendChild(marker);
+      const s5=doc.createElement('script');s5.src='/ine-sacos-granel-automatico-v9.js?v=excel-format-v10';doc.body.appendChild(s5);
+      const s10=doc.createElement('script');s10.src='/ine-sacos-granel-automatico-v10.js?v=excel-format-v10';doc.body.appendChild(s10);
+    }catch(e){console.error('Excel V10 reports injection failed',e)}
   });
 })();
 </script>
