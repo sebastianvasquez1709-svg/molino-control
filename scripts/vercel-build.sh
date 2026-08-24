@@ -64,6 +64,16 @@ node - <<'NODE'
 const fs=require('fs');
 const p='public/index.html';
 let s=fs.readFileSync(p,'utf8');
+const stamp=Date.now().toString(36);
+s=s.replace(/(src=["'])\/app\.js(?:\?[^"']*)?(["'])/g,`$1/app.js?v=${stamp}$2`);
+fs.writeFileSync(p,s);
+if(!new RegExp('src=["\\\']\\/app\\.js\\?v='+stamp.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&')+'["\\\']').test(s))throw new Error('No se pudo versionar app.js para invalidar caché del navegador.');
+console.log('APP BUNDLE CACHE-BUST V1: '+stamp);
+NODE
+node - <<'NODE'
+const fs=require('fs');
+const p='public/index.html';
+let s=fs.readFileSync(p,'utf8');
 const marker='<script src="/ine-sacos-granel-automatico-v4.js"></script>';
 if(!s.includes(marker)){
   if(s.includes('</body></html>')) s=s.replace('</body></html>', marker+'\n</body></html>');
