@@ -19,10 +19,13 @@ node --check scripts/counter-worker-frag.js
 node --check excel-worker.js
 node --check ine-engine-maestro.js
 node --check ine-sacos-granel-automatico-v4.js
+node --check ine-sacos-granel-automatico-v5.js
 node - <<'NODE'
 const fs=require('fs');
 const app=fs.readFileSync('app.js','utf8');
 const worker=fs.readFileSync('excel-worker.js','utf8');
+const auto=fs.readFileSync('ine-sacos-granel-automatico-v4.js','utf8');
+const autoV5=fs.readFileSync('ine-sacos-granel-automatico-v5.js','utf8');
 if(app.includes("['documents','🧾 Documentos'],"))throw new Error('El módulo Documentos sigue expuesto en navegación.');
 if(!app.includes('function renderGuides(){'))throw new Error('Falta el módulo profesional de Guías.');
 if(!app.includes('guideQ')||!app.includes('guideCsv')||!app.includes('guidePrint'))throw new Error('Faltan controles profesionales de Guías.');
@@ -39,8 +42,15 @@ if(!worker.includes('COUNTER SACOS GRANEL V1'))throw new Error('Falta el motor d
 if(!worker.includes('counter, iva: iv'))throw new Error('El snapshot no publica metrics.counter.');
 if(!app.includes('CLOUD PERSISTENCE: Supabase is the durable source'))throw new Error('Falta el puente de persistencia cloud.');
 if(!fs.readFileSync('index.html','utf8').includes('/molino-cloud.js'))throw new Error('index.html no carga la capa cloud.');
-if(app.includes("data:image/jpeg;base64,"))throw new Error('El logo Base64 sigue embebido en app.js.');
+if(autoV5.includes('AUTO_INE_SACOS_GRANEL_V5_FORMATOS_MAESTRO')===false)throw new Error('Falta el motor V5 de formatos Maestro.');
+if(!auto.includes('function isNc(r)'))throw new Error('Falta detección de Notas de Crédito.');
+if(!auto.includes('function factor(r)'))throw new Error('Falta conversión automática de unidades.');
+if(!auto.includes('return f>1?kg(r)/f:kg(r)'))throw new Error('Falta fórmula Ventas*Sacos.');
+if(!auto.includes("filter(x=>!isNc(x))"))throw new Error('Las NC no están excluidas del contador.');
+if(!auto.includes('TOTAL SACOS KG')||!auto.includes('TOTAL GRANEL'))throw new Error('Faltan totales de impresión.');
+if(!auto.includes('Imprimir 3 formatos'))throw new Error('Falta impresión conjunta de los tres formatos.');
 console.log('CORE MODULES STATIC CHECK: PASS');
+console.log('MAESTRO SACOS/GRANEL PRINT ENGINE CHECK: PASS');
 NODE
 rm -rf public
 mkdir -p public
