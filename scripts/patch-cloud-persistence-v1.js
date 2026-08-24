@@ -21,23 +21,28 @@ async function hydrateCloudData(){
 }
 `;
 if(!app.includes('CLOUD PERSISTENCE: Supabase is the durable source')) app=app.replace(marker,marker+bridge);
-app=app.replace(/const EMBEDDED_LOGO_DATA='data:image\\/jpeg;base64,[^']+';/,"const EMBEDDED_LOGO_DATA='/logo molino.jpg';");
+app=app.replace(/const EMBEDDED_LOGO_DATA='data:image\/jpeg;base64,[^']+';/,"const EMBEDDED_LOGO_DATA='/logo molino.jpg';");
 const saveContactOld="function saveContactForClient(c,data){if(!c)return;const book=loadClientContacts();book[contactKey(c)]={...clientContact(c),...data};saveClientContacts(book);applyClientContacts()}";
 const saveContactNew="function saveContactForClient(c,data){if(!c)return;const key=contactKey(c),book=loadClientContacts();const payload={...clientContact(c),...data};book[key]=payload;saveClientContacts(book);applyClientContacts();cloudSaveContact(key,payload)}";
 if(app.includes(saveContactOld)) app=app.replace(saveContactOld,saveContactNew); else fail('No se encontró saveContactForClient');
 const saveDispatchOld="function saveDispatchPlans(){try{localStorage.setItem('molino_dispatch_plan_v1',JSON.stringify(state.dispatchPlan))}catch(e){console.warn(e)}}";
 const saveDispatchNew="function saveDispatchPlans(){try{localStorage.setItem('molino_dispatch_plan_v1',JSON.stringify(state.dispatchPlan));cloudReplaceDispatches(state.dispatchPlan)}catch(e){console.warn(e)}}";
 if(app.includes(saveDispatchOld)) app=app.replace(saveDispatchOld,saveDispatchNew); else fail('No se encontró saveDispatchPlans');
-const readExistRe=/async function readExistenceRecords\\(\\)\\{[\\s\\S]*?\\n\\}\\nasync function persistExistenceRecords/;
+const readExistStart='async function readExistenceRecords(){';
+const readExistEnd='\nasync function persistExistenceRecords';
+const readStart=app.indexOf(readExistStart);const readEnd=app.indexOf(readExistEnd,readStart);
+if(readStart<0||readEnd<0)fail('No se encontró readExistenceRecords');
 const readExistNew=`async function readExistenceRecords(){
   const cloud=await cloudLoadExistence();
   if(Array.isArray(cloud)&&cloud.length){state.existenceRecords=cloud;return cloud.sort((a,b)=>String(a.key).localeCompare(String(b.key)))}
   try{const db=await idb();const rows=await new Promise((resolve,reject)=>{const tx=db.transaction(STORE_EXISTENCE,'readonly');const r=tx.objectStore(STORE_EXISTENCE).getAll();r.onsuccess=()=>resolve(r.result||[]);r.onerror=()=>reject(r.error)});db.close();if(rows.length)return rows.sort((a,b)=>String(a.key).localeCompare(String(b.key)))}catch(e){console.warn('No fue posible restaurar Registros de Existencia',e)}
   const legacy=legacyExistenceRecords();state.existenceRecords=legacy;return legacy.sort((a,b)=>String(a.key).localeCompare(String(b.key)));
-}
-async function persistExistenceRecords`;
-if(readExistRe.test(app)) app=app.replace(readExistRe,readExistNew); else fail('No se encontró readExistenceRecords');
-const persistRe=/async function persistExistenceRecords\\(rows\\)\\{[\\s\\S]*?\\n\\}\\nasync function readExistenceBaseRecords/;
+}`;
+app=app.slice(0,readStart)+readExistNew+app.slice(readEnd);
+const persistStart='async function persistExistenceRecords(rows){';
+const persistEnd='\nasync function readExistenceBaseRecords';
+const pStart=app.indexOf(persistStart);const pEnd=app.indexOf(persistEnd,pStart);
+if(pStart<0||pEnd<0)fail('No se encontró persistExistenceRecords');
 const persistNew=`async function persistExistenceRecords(rows){
   const clean=(Array.isArray(rows)?rows:[]).filter(x=>x&&x.key);
   state.existenceRecords=clean;
@@ -45,9 +50,8 @@ const persistNew=`async function persistExistenceRecords(rows){
   let db;try{db=await idb();await new Promise((resolve,reject)=>{const tx=db.transaction(STORE_EXISTENCE,'readwrite');const os=tx.objectStore(STORE_EXISTENCE);os.clear();for(const row of clean)os.put(row);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('No se pudo guardar Registros de Existencia'))});}catch(e){console.warn('No fue posible persistir Registros de Existencia',e)}finally{try{db?.close()}catch{}}
   await cloudReplaceExistence(clean);
   return clean;
-}
-async function readExistenceBaseRecords`;
-if(persistRe.test(app)) app=app.replace(persistRe,persistNew); else fail('No se encontró persistExistenceRecords');
+}`;
+app=app.slice(0,pStart)+persistNew+app.slice(pEnd);
 const bootNeed="async function boot(){if(!state.invoiceFilters.month)state.invoiceFilters.month=currentMonthKey();state.dispatchPlan=dispatchPlans();";
 const bootWith="async function boot(){if(!state.invoiceFilters.month)state.invoiceFilters.month=currentMonthKey();state.dispatchPlan=dispatchPlans();await hydrateCloudData().catch(e=>console.warn('Cloud hydration skipped',e));";
 if(app.includes(bootNeed)) app=app.replace(bootNeed,bootWith); else fail('No se encontró inicio de boot');
@@ -57,7 +61,7 @@ const indexPath='index.html';let index=fs.readFileSync(indexPath,'utf8');
 if(!index.includes('<script src="/molino-cloud.js"></script>')){
   const anchor='<script src="app.js"></script>';
   if(!index.includes(anchor)) fail('No se encontró app.js en index.html');
-  index=index.replace(anchor,'<script src="/molino-cloud.js"></script>\\n'+anchor);
+  index=index.replace(anchor,'<script src="/molino-cloud.js"></script>\n'+anchor);
   fs.writeFileSync(indexPath,index);
 }
 console.log('CLOUD PERSISTENCE V1: PASS');
