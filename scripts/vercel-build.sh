@@ -1,12 +1,14 @@
 #!/bin/sh
 set -eu
-# Stable build: reviewed Guides + fast document navigation + audited Sacos/Granel counter + existence reports + automatic INE/Sacos/Granel registry.
+# Stable build: reviewed Guides + fast document navigation + audited Sacos/Granel counter + existence reports + automatic INE/Sacos/Granel registry + durable cloud persistence.
+node scripts/patch-cloud-persistence-v1.js
 node scripts/patch-guides-professional-v1.js
 node scripts/patch-fast-docs-v1.js
 node scripts/patch-counter-sacogranel-v2.js
 node scripts/patch-counter-snapshot-compat-v1.js
 node scripts/patch-existence-sacogranel-reports-v1.js
 node --check app.js
+node --check scripts/patch-cloud-persistence-v1.js
 node --check scripts/patch-guides-professional-v1.js
 node --check scripts/patch-fast-docs-v1.js
 node --check scripts/patch-counter-sacogranel-v2.js
@@ -35,6 +37,9 @@ if(!app.includes('counterExistence:renderExistenceReports'))throw new Error('Fal
 if(!app.includes('COUNTER_SNAPSHOT_COMPAT_V1'))throw new Error('Falta compatibilidad con snapshots anteriores del Maestro.');
 if(!worker.includes('COUNTER SACOS GRANEL V1'))throw new Error('Falta el motor del contador en excel-worker.js.');
 if(!worker.includes('counter, iva: iv'))throw new Error('El snapshot no publica metrics.counter.');
+if(!app.includes('CLOUD PERSISTENCE: Supabase is the durable source'))throw new Error('Falta el puente de persistencia cloud.');
+if(!fs.readFileSync('index.html','utf8').includes('/molino-cloud.js'))throw new Error('index.html no carga la capa cloud.');
+if(app.includes("data:image/jpeg;base64,"))throw new Error('El logo Base64 sigue embebido en app.js.');
 console.log('CORE MODULES STATIC CHECK: PASS');
 NODE
 rm -rf public
