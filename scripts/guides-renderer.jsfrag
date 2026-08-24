@@ -39,44 +39,26 @@ function renderGuides(){
     const rut=pick(g,['rut','RUT','rutCliente','rut_receptor','receptorRut']);
     const rawClient=pick(g,['cliente','razonSocial','nombreCliente','receptor','receptorNombre']);
     const matched=resolveClient(rut,rawClient);
-    return {
-      folio:pick(g,['folio','numero','nro','guia','numeroGuia']),
-      fecha:formatDate(pick(g,['fecha','date','fechaEmision','fecha_emision'])),
-      cliente:rawClient||pick(matched,['nombre','razon_social','razonSocial','nombre_fantasia','nombreFantasia'])||'Cliente no identificado',
-      rut:rut||pick(matched,['rut','RUT']),
-      destino:pick(g,['destino','direccion','direccionEntrega','direccion_entrega','lugarEntrega']),
-      comuna:pick(g,['comuna','comunaEntrega','comuna_entrega'])||pick(matched,['comuna']),
-      estado:pick(g,['estado','status','estadoGuia'])||'Emitida',
-      oc:pick(g,['oc','ordenCompra','orden','orden_compra']),
-      productos:normalizeItems(g),
-      kg:n(pick(g,['kg','kilos','cantidadKg','totalKg'])||0),
-      sacos:n(pick(g,['sacos','cantidadSacos','totalSacos'])||0),
-      observacion:pick(g,['observacion','obs','observaciones'])
-    };
+    return {folio:pick(g,['folio','numero','nro','guia','numeroGuia']),fecha:formatDate(pick(g,['fecha','date','fechaEmision','fecha_emision'])),cliente:rawClient||pick(matched,['nombre','razon_social','razonSocial','nombre_fantasia','nombreFantasia'])||'Cliente no identificado',rut:rut||pick(matched,['rut','RUT']),destino:pick(g,['destino','direccion','direccionEntrega','direccion_entrega','lugarEntrega']),comuna:pick(g,['comuna','comunaEntrega','comuna_entrega'])||pick(matched,['comuna']),estado:pick(g,['estado','status','estadoGuia'])||'Emitida',oc:pick(g,['oc','ordenCompra','orden','orden_compra']),productos:normalizeItems(g),kg:n(pick(g,['kg','kilos','cantidadKg','totalKg'])||0),sacos:n(pick(g,['sacos','cantidadSacos','totalSacos'])||0),observacion:pick(g,['observacion','obs','observaciones'])};
   });
   const states=[...new Set(rows.map(r=>String(r.estado||'Emitida')).filter(Boolean))];
   const stamp=new Date().toLocaleDateString('es-CL');
+  const csvCell=v=>'"'+String(v??'').replace(/"/g,'""').replace(/\r?\n/g,' ')+'"';
+  const csvLine=values=>values.map(csvCell).join(';');
 
   $('content').innerHTML=`
     <style>
-      .guideRoot{min-width:0}
-      .guideTableWrap{max-height:calc(100vh - 330px);min-height:320px;overflow:auto}
-      .guideTable{width:100%;table-layout:fixed}
+      .guideRoot{min-width:0}.guideTableWrap{max-height:calc(100vh - 330px);min-height:320px;overflow:auto}.guideTable{width:100%;table-layout:fixed}
       .guideTable th,.guideTable td{white-space:normal;word-break:break-word;overflow-wrap:anywhere;vertical-align:top}
       .guideTable th:nth-child(1){width:7%}.guideTable th:nth-child(2){width:9%}.guideTable th:nth-child(3){width:18%}.guideTable th:nth-child(4){width:16%}.guideTable th:nth-child(5){width:7%}.guideTable th:nth-child(6){width:15%}.guideTable th:nth-child(7){width:7%}.guideTable th:nth-child(8){width:7%}.guideTable th:nth-child(9){width:7%}.guideTable th:nth-child(10){width:7%}
-      .guideClient{font-weight:800;color:#123a78}.guideMeta{display:block;margin-top:2px}.guideDetailItem{margin-bottom:4px}.guideDetailItem:last-child{margin-bottom:0}
-      .guideDetailItem strong{display:block}.guideDetailItem span{font-size:11px;color:#667085}
-      .guideEmpty{padding:30px;text-align:center;color:#667085}
+      .guideClient{font-weight:800;color:#123a78}.guideMeta{display:block;margin-top:2px}.guideDetailItem{margin-bottom:4px}.guideDetailItem:last-child{margin-bottom:0}.guideDetailItem strong{display:block}.guideDetailItem span{font-size:11px;color:#667085}.guideEmpty{padding:30px;text-align:center;color:#667085}
     </style>
     <div class="card invoiceModule guideRoot">
-      <div class="sectionTitle">
-        <div><div class="pill">GUÍAS DE DESPACHO</div><h3 style="margin-top:8px">Control profesional de guías</h3><div class="note">Consulta, filtra, revisa y prepara tus guías para operación y entrega.</div></div>
+      <div class="sectionTitle"><div><div class="pill">GUÍAS DE DESPACHO</div><h3 style="margin-top:8px">Control profesional de guías</h3><div class="note">Consulta, filtra, revisa y prepara tus guías para operación y entrega.</div></div>
         <div class="toolbar"><button class="secondary" type="button" id="guideClear">Limpiar</button><button class="secondary" type="button" id="guideCsv">⬇️ Exportar CSV</button><button class="primary" type="button" id="guidePrint">🖨️ Imprimir</button></div>
       </div>
       <div class="kpiRow" style="margin:14px 0" id="guideKpis"></div>
-      <div class="card" style="padding:13px;background:#f8fafc;margin-bottom:12px">
-        <div class="toolbar"><input id="guideQ" class="grow" placeholder="Buscar folio, cliente, RUT, destino, O/C o producto…" value="${esc(state.search.guides||'')}"><select id="guideStatus"><option value="">Todos los estados</option>${states.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select></div>
-      </div>
+      <div class="card" style="padding:13px;background:#f8fafc;margin-bottom:12px"><div class="toolbar"><input id="guideQ" class="grow" placeholder="Buscar folio, cliente, RUT, destino, O/C o producto…" value="${esc(state.search.guides||'')}"><select id="guideStatus"><option value="">Todos los estados</option>${states.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select></div></div>
       <div class="invoiceResultsHeader"><span id="guideCount"></span><span>Consulta emitida ${stamp}</span></div>
       <div class="tableWrap guideTableWrap"><table class="table guideTable"><thead><tr><th>Guía</th><th>Fecha</th><th>Cliente / RUT</th><th>Destino</th><th>O/C</th><th>Detalle</th><th>KG</th><th>Sacos</th><th>Estado</th><th>Observación</th></tr></thead><tbody id="guideBody"></tbody></table></div>
     </div>`;
@@ -105,21 +87,26 @@ function renderGuides(){
   $('guideStatus').onchange=paint;
   $('guideClear').onclick=()=>{state.search.guides='';renderGuides()};
   $('guideCsv').onclick=()=>{
-    const list=getList(),out=['Guía;Fecha;Cliente;RUT;Destino;O/C;Estado;Producto;KG;Sacos;Observación'];
-    list.forEach(r=>{if(r.productos.length)r.productos.forEach(x=>out.push([r.folio,r.fecha,r.cliente,r.rut,r.destino,r.oc,r.estado,x?.producto||x?.detalle||'',x?.kg||'',x?.sacos||'',r.observacion].map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')));else out.push([r.folio,r.fecha,r.cliente,r.rut,r.destino,r.oc,r.estado,'',r.kg,r.sacos,r.observacion].map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';'))});
-    const a=document.createElement('a'),u=URL.createObjectURL(new Blob(['\ufeff'+out.join('\n')],{type:'text/csv;charset=utf-8'}));a.href=u;a.download='guias_molino_control.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000);
+    const list=getList();
+    const out=['Guía;Fecha;Cliente;RUT;Destino;O/C;Estado;Producto;KG;Sacos;Observación'];
+    for(const r of list){
+      if(r.productos.length){
+        for(const x of r.productos){out.push(csvLine([r.folio,r.fecha,r.cliente,r.rut,r.destino,r.oc,r.estado,x?.producto||x?.detalle||'',x?.kg||'',x?.sacos||'',r.observacion]));}
+      }else out.push(csvLine([r.folio,r.fecha,r.cliente,r.rut,r.destino,r.oc,r.estado,'',r.kg,r.sacos,r.observacion]));
+    }
+    const a=document.createElement('a');
+    const u=URL.createObjectURL(new Blob(['\ufeff'+out.join('\n')],{type:'text/csv;charset=utf-8'}));
+    a.href=u;a.download='guias_molino_control.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000);
   };
   $('guidePrint').onclick=()=>{
-    const body=getList().map(r=>`<tr><td>${esc(r.folio)}</td><td>${esc(r.fecha)}</td><td>${esc(r.cliente)}</td><td>${esc(r.rut)}</td><td>${esc(r.destino)}</td><td>${esc(r.oc)}</td><td>${money(r.kg)}</td><td>${money(r.sacos)}</td><td>${esc(r.estado)}</td></tr>`).join('');
-    const printHtml=`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Guías de Despacho</title><style>@page{size:A4 landscape;margin:10mm}body{font-family:Arial,sans-serif;padding:0;color:#172033}h1{color:#123a78;font-size:20px}p{font-size:11px;color:#475467}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #cfd7e3;padding:5px;text-align:left}th{background:#eef4fb;color:#123a78}thead{display:table-header-group}tr{page-break-inside:avoid}</style></head><body><h1>Molinos San Miguel Ltda. — Guías de Despacho</h1><p>Reporte generado ${stamp} · ${listCountText(getList().length)}</p><table><thead><tr><th>Guía</th><th>Fecha</th><th>Cliente</th><th>RUT</th><th>Destino</th><th>O/C</th><th>KG</th><th>Sacos</th><th>Estado</th></tr></thead><tbody>${body||'<tr><td colspan="9">Sin guías.</td></tr>'}</tbody></table></body></html>`;
+    const list=getList();
+    const body=list.map(r=>`<tr><td>${esc(r.folio)}</td><td>${esc(r.fecha)}</td><td>${esc(r.cliente)}</td><td>${esc(r.rut)}</td><td>${esc(r.destino)}</td><td>${esc(r.oc)}</td><td>${money(r.kg)}</td><td>${money(r.sacos)}</td><td>${esc(r.estado)}</td></tr>`).join('');
+    const printHtml=`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Guías de Despacho</title><style>@page{size:A4 landscape;margin:10mm}body{font-family:Arial,sans-serif;padding:0;color:#172033}h1{color:#123a78;font-size:20px}p{font-size:11px;color:#475467}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #cfd7e3;padding:5px;text-align:left}th{background:#eef4fb;color:#123a78}thead{display:table-header-group}tr{page-break-inside:avoid}</style></head><body><h1>Molinos San Miguel Ltda. — Guías de Despacho</h1><p>Reporte generado ${stamp} · ${list.length} guía${list.length===1?'':'s'} encontrada${list.length===1?'':'s'}</p><table><thead><tr><th>Guía</th><th>Fecha</th><th>Cliente</th><th>RUT</th><th>Destino</th><th>O/C</th><th>KG</th><th>Sacos</th><th>Estado</th></tr></thead><tbody>${body||'<tr><td colspan="9">Sin guías.</td></tr>'}</tbody></table></body></html>`;
     const w=window.open('','_blank','width=1300,height=900');
     if(!w){toast('El navegador bloqueó la ventana de impresión.','err');return;}
-    w.document.open();
-    w.document.write(printHtml);
-    w.document.close();
+    w.document.open();w.document.write(printHtml);w.document.close();
     w.onload=()=>setTimeout(()=>{try{w.focus();w.print()}catch{}},120);
     setTimeout(()=>{try{w.focus();w.print()}catch{}},650);
   };
-  function listCountText(count){return count+' guía'+(count===1?'':'s')+' encontrada'+(count===1?'':'s')}
   paint();
 }
