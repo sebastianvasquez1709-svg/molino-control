@@ -1,0 +1,70 @@
+function renderSacosGranel(){
+  const counter=state.snapshot?.metrics?.counter;
+  if(!counter){
+    $('content').innerHTML=`<div class="card"><div class="sectionTitle"><div><span class="pill">📦 CONTROL DE VOLUMEN</span><h3 style="margin:8px 0 4px">Contador de Sacos y Graneles</h3><div class="note">Carga o vuelve a cargar el Excel Maestro para habilitar el contador basado en las fórmulas reales.</div></div></div><div class="status warn">El Maestro activo fue generado sin el motor de conteo V1. No se inventan valores.</div><div class="toolbar"><button class="primary" type="button" onclick="show('maestro')">📥 Ir a Maestro Excel</button></div></div>`;
+    return;
+  }
+  const periods=counter.periods||{};
+  const keys=Object.keys(periods).sort().reverse();
+  let selected=state.counterPeriod&&periods[state.counterPeriod]?state.counterPeriod:(keys[0]||'');
+  state.counterPeriod=selected;
+  const period=periods[selected]||null;
+  const fmt=x=>Number(x||0).toLocaleString('es-CL',{maximumFractionDigits:2});
+  const money=x=>'$ '+Number(x||0).toLocaleString('es-CL',{maximumFractionDigits:0});
+  const pct=x=>(Number(x||0)*100).toLocaleString('es-CL',{maximumFractionDigits:2})+'%';
+  const esc2=v=>typeof esc==='function'?esc(v):String(v??'').replace(/[&<>\"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[m]));
+  const tab=state.counterTab||'summary';
+  $('content').innerHTML=`
+    <div class="card counterModule">
+      <div class="sectionTitle">
+        <div><span class="pill">📦 SACOS · GRANELES</span><h3 style="margin:8px 0 4px">Contador de Sacos y Graneles</h3><div class="note">Control basado en BASE DE DATOS + CODIGOS + informes de Sacos/Graneles. No mezcla unidades con kilogramos.</div></div>
+        <div class="toolbar"><select id="counterPeriod" class="searchInput">${keys.map(k=>`<option value="${esc2(k)}" ${k===selected?'selected':''}>${esc2(periods[k].label||k)}</option>`).join('')}</select><button class="secondary" type="button" id="counterPrint">🖨️ Imprimir</button><button class="secondary" type="button" id="counterCsv">⬇️ CSV</button></div>
+      </div>
+      <div class="kpiRow" style="margin:14px 0">
+        <div class="kpi"><small>SACOS / UNIDADES</small><b>${fmt(period?.sacosUnits)}</b><span class="note">VENTAS * SACOS · solo filas SACOS</span></div>
+        <div class="kpi"><small>KG EN SACOS</small><b>${fmt(period?.sacosKg)}</b><span class="note">Salida física de filas SACOS</span></div>
+        <div class="kpi"><small>KG GRANEL</small><b>${fmt(period?.granelKg)}</b><span class="note">Salida física de filas GRANEL</span></div>
+        <div class="kpi"><small>KG TOTAL</small><b>${fmt(period?.totalKg)}</b><span class="note">Sacos + granel</span></div>
+      </div>
+      <div class="infoGrid" style="margin-bottom:14px">
+        <div class="info"><small>Líneas auditadas</small><b>${fmt(period?.rows)}</b></div>
+        <div class="info"><small>Códigos</small><b>${fmt(period?.codesCount)}</b></div>
+        <div class="info"><small>Diferencias de fórmula</small><b>${fmt(period?.formulaDifferences?.length||0)}</b></div>
+        <div class="info"><small>Diferencias S/G</small><b>${fmt(period?.sgDifferences?.length||0)}</b></div>
+      </div>
+      <div class="toolbar counterTabs" style="margin-bottom:14px">
+        ${[['summary','Resumen'],['codes','Detalle por código'],['reports','Informes Maestro'],['audit','Auditoría']].map(([k,t])=>`<button class="${tab===k?'primary':'secondary'}" type="button" data-counter-tab="${k}">${t}</button>`).join('')}
+      </div>
+      <div id="counterPanel"></div>
+    </div>`;
+
+  const panel=$('counterPanel');
+  const renderTab=()=>{
+    if(!period){panel.innerHTML='<div class="empty">No existe un período válido en BASE DE DATOS.</div>';return;}
+    if(tab==='summary'){
+      const families=period.byFamily||[];
+      panel.innerHTML=`<div class="sectionTitle"><div><h3>Resumen operativo</h3><div class="note">Clasificación oficial S/G de la fórmula del Maestro.</div></div><span class="pill">${esc2(period.label||selected)}</span></div><div class="tableWrap"><table class="table"><thead><tr><th>Familia INE</th><th>Clase</th><th>Líneas</th><th>KG</th><th>Sacos</th><th>% KG</th></tr></thead><tbody>${families.map(x=>`<tr><td><strong>${esc2(x.family||'SIN FAMILIA')}</strong></td><td><span class="pill">${esc2(x.clase)}</span></td><td>${fmt(x.rows)}</td><td>${fmt(x.kg)}</td><td>${fmt(x.sacos)}</td><td>${pct(period.totalKg?x.kg/period.totalKg:0)}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">Sin detalle.</td></tr>'}</tbody></table></div><div class="card" style="margin-top:14px;background:#f8fafc"><h3>Reconciliación con INE (2)</h3><p class="note">El Maestro muestra el mismo volumen total del período en la pauta INE. No se usa esta cifra para inventar sacos ni granel.</p><div class="infoGrid"><div class="info"><small>KG INE (2)</small><b>${fmt(period.ineReferenceKg)}</b></div><div class="info"><small>KG Contador</small><b>${fmt(period.totalKg)}</b></div><div class="info"><small>Diferencia</small><b>${fmt((period.totalKg||0)-(period.ineReferenceKg||0))}</b></div><div class="info"><small>Estado</small><b>${Math.abs((period.totalKg||0)-(period.ineReferenceKg||0))<0.01?'✓ Cuadra':'⚠ Revisar'}</b></div></div></div>`;
+      return;
+    }
+    if(tab==='codes'){
+      const q=String(state.counterQuery||'').trim().toLowerCase();
+      const rows=(period.byCode||[]).filter(x=>!q||[x.code,x.product,x.detail,x.family,x.rule,x.clase].join(' ').toLowerCase().includes(q));
+      panel.innerHTML=`<div class="sectionTitle"><div><h3>Detalle por código</h3><div class="note">La regla muestra exactamente qué rama del cálculo VENTAS * SACOS fue aplicada.</div></div><input id="counterQ" class="searchInput" placeholder="Buscar código, producto o regla…" value="${esc2(state.counterQuery||'')}"></div><div class="tableWrap"><table class="table"><thead><tr><th>Código</th><th>Producto / detalle</th><th>Familia</th><th>Clase</th><th>Regla Maestro</th><th>Líneas</th><th>Salida KG</th><th>Sacos</th></tr></thead><tbody>${rows.map(x=>`<tr><td><strong>${esc2(x.code||'—')}</strong></td><td>${esc2(x.product||'')}<br><span class="note">${esc2(x.detail||'')}</span></td><td>${esc2(x.family||'SIN MAPEO')}</td><td><span class="pill">${esc2(x.clase)}</span></td><td>${esc2(x.rule)}</td><td>${fmt(x.rows)}</td><td>${fmt(x.kg)}</td><td>${fmt(x.sacos)}</td></tr>`).join('')||'<tr><td colspan="8" class="empty">No hay coincidencias.</td></tr>'}</tbody></table></div>`;
+      $('counterQ').oninput=e=>{state.counterQuery=e.target.value;state.counterTab='codes';renderSacosGranel()};
+      return;
+    }
+    if(tab==='reports'){
+      const reports=Object.values(counter.reports||{});
+      panel.innerHTML=`<div class="sectionTitle"><div><h3>Informes y hojas relacionadas</h3><div class="note">Los informes tienen filtros distintos. Se muestran por separado y no se suman entre sí.</div></div></div><div class="tableWrap"><table class="table"><thead><tr><th>Hoja</th><th>Período</th><th>Indicador</th><th>Valor</th><th>Unidad</th><th>Observación</th></tr></thead><tbody>${reports.map(r=>`<tr><td><strong>${esc2(r.sheet)}</strong></td><td>${esc2(r.period||'')}</td><td>${esc2(r.metric)}</td><td>${fmt(r.value)}</td><td>${esc2(r.unit)}</td><td>${esc2(r.note||'')}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">No hay informes complementarios.</td></tr>'}</tbody></table></div><div class="status info" style="margin-top:12px">Fuentes auditadas: CODIGOS, BASE DE DATOS, INE (2), NESTLE SACOS, NESTLE Y CPW, CPW GRANELES, NESTLE GRANELES, ENVASE, ENVASE (3) y Hoja2 como apoyo. El valor de stock/valorización no se interpreta como conteo de sacos.</div>`;
+      return;
+    }
+    const dif=period.formulaDifferences||[];const sg=period.sgDifferences||[];const defaults=(period.ruleCounts||[]).filter(x=>x.rule==='SACO_25KG_DEFAULT');
+    panel.innerHTML=`<div class="sectionTitle"><div><h3>Auditoría de fórmula</h3><div class="note">Se compara la fórmula reconstruida contra el valor calculado por Excel en VENTAS * SACOS y S/G.</div></div><span class="pill">${(dif.length+sg.length)===0?'✓ SIN DIFERENCIAS':'⚠ REVISAR'}</span></div><div class="infoGrid"><div class="info"><small>Filas con fórmula coincidente</small><b>${fmt(period.formulaMatches)}</b></div><div class="info"><small>Filas comparadas</small><b>${fmt(period.rows)}</b></div><div class="info"><small>Regla por defecto 25 KG</small><b>${fmt(defaults.reduce((a,x)=>a+x.rows,0))}</b></div><div class="info"><small>Códigos no mapeados</small><b>${fmt((period.unmappedCodes||[]).length)}</b></div></div><div class="card" style="margin-top:12px;background:#f8fafc"><h4>Parámetros que manda CODIGOS</h4><div class="tableWrap"><table class="table"><thead><tr><th>Parámetro</th><th>Valor</th></tr></thead><tbody>${Object.entries(counter.parameters||{}).map(([k,v])=>`<tr><td>${esc2(k)}</td><td>${esc2(Array.isArray(v)?v.join(' | '):v)}</td></tr>`).join('')}</tbody></table></div></div><div class="card" style="margin-top:12px;background:#fff8f0"><h4>Diferencias detectadas</h4><pre style="white-space:pre-wrap;max-height:260px;overflow:auto">${esc2(JSON.stringify({formula:dif.slice(0,25),sg:sg.slice(0,25)},null,2))}</pre></div>`;
+  };
+  panel.addEventListener('change',e=>{if(e.target.id==='counterPeriod'){state.counterPeriod=e.target.value;state.counterTab='summary';renderSacosGranel()}});
+  $('counterPeriod').onchange=e=>{state.counterPeriod=e.target.value;state.counterTab='summary';renderSacosGranel()};
+  $('content').querySelectorAll('[data-counter-tab]').forEach(b=>b.onclick=()=>{state.counterTab=b.dataset.counterTab;renderSacosGranel()});
+  $('counterCsv').onclick=()=>{const rows=period?.byCode||[];if(!rows.length){toast('No hay detalle para exportar.','warn');return;}const header=['Código','Producto','Detalle','Familia','Clase','Regla','Líneas','Salida KG','Sacos'];const lines=rows.map(x=>[x.code,x.product,x.detail,x.family,x.clase,x.rule,x.rows,x.kg,x.sacos].map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';'));const a=document.createElement('a');const u=URL.createObjectURL(new Blob(['\ufeff'+[header.join(';'),...lines].join('\r\n')],{type:'text/csv;charset=utf-8'}));a.href=u;a.download='contador_sacos_graneles_'+selected+'.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1200)};
+  $('counterPrint').onclick=()=>{const r=period;const w=window.open('','_blank');if(!w){alert('El navegador bloqueó la ventana de impresión.');return;}w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Contador Sacos y Graneles</title><style>body{font-family:Arial,sans-serif;color:#172033;padding:24px}h1{color:#123a78}table{border-collapse:collapse;width:100%;font-size:11px}th,td{border:1px solid #cfd7e3;padding:5px;text-align:left}th{background:#eef4fb}.k{display:inline-block;margin:8px 18px 8px 0;font-weight:700}.note{color:#59697f;font-size:11px}</style></head><body><h1>Molinos San Miguel Ltda. — Contador de Sacos y Graneles</h1><p>Período: '+esc2(r.label||selected)+'</p><div class="k">Sacos: '+fmt(r.sacosUnits)+'</div><div class="k">KG sacos: '+fmt(r.sacosKg)+'</div><div class="k">KG granel: '+fmt(r.granelKg)+'</div><div class="k">KG total: '+fmt(r.totalKg)+'</div><table><thead><tr><th>Código</th><th>Producto</th><th>Clase</th><th>Regla</th><th>KG</th><th>Sacos</th></tr></thead><tbody>'+((r.byCode||[]).map(x=>'<tr><td>'+esc2(x.code)+'</td><td>'+esc2(x.product)+'</td><td>'+esc2(x.clase)+'</td><td>'+esc2(x.rule)+'</td><td>'+fmt(x.kg)+'</td><td>'+fmt(x.sacos)+'</td></tr>').join(''))+'</tbody></table><p class="note">Fuente: Maestro Excel. Las hojas de informes se muestran por separado porque operan con filtros/alcances distintos.</p></body></html>');w.document.close();w.focus();setTimeout(()=>w.print(),250)};
+  renderTab();
+}
