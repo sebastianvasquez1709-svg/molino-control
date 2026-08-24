@@ -3,6 +3,7 @@
   "buildCommand": "sh scripts/vercel-build.sh",
   "outputDirectory": "public",
   "rewrites": [
+    { "source": "/", "destination": "/index-auto.html" },
     { "source": "/cloud", "destination": "/cloud.html" },
     { "source": "/cloud/", "destination": "/cloud.html" },
     { "source": "/ine-sacos-granel-automatico-v4.js", "destination": "/ine-sacos-granel-automatico-v5.js" }
