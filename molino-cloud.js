@@ -62,16 +62,14 @@
     const sb = await client();
     const { data, error } = await withTimeout(sb.auth.signInWithPassword({ email, password }));
     if (error) throw error;
-    snapshotCache = null;
-    snapshotPromise = null;
+    clearCache();
     return data;
   }
 
   async function signOut() {
     const sb = await client();
     const { error } = await withTimeout(sb.auth.signOut());
-    snapshotCache = null;
-    snapshotPromise = null;
+    clearCache();
     if (error) throw error;
   }
 
@@ -87,9 +85,29 @@
   async function fetchSnapshot() {
     const sb = await client();
     const { data, error } = await withTimeout(sb.rpc('molino_app_snapshot'));
-    if (error) throw error;
-    snapshotCache = { data, at: Date.now() };
-    return data;
+    if (!error) {
+      snapshotCache = { data, at: Date.now() };
+      return data;
+    }
+
+    // Compatibility fallback: the current database exposes maestro_public_health
+    // but not molino_app_snapshot. Keep the cloud layer usable instead of failing
+    // every caller when the optional aggregate RPC is absent.
+    const healthData = await withTimeout(sb.rpc('maestro_public_health'));
+    if (healthData.error) throw error;
+    const fallback = Object.freeze({
+      source: 'maestro_public_health',
+      health: healthData.data,
+      clients: [],
+      documents: [],
+      invoices: [],
+      guides: [],
+      boletas: [],
+      existence: [],
+      dispatches: []
+    });
+    snapshotCache = { data: fallback, at: Date.now() };
+    return fallback;
   }
 
   async function snapshot(options = {}) {
