@@ -9,9 +9,9 @@
   frame.addEventListener('load',()=>{
     try{
       const doc=frame.contentDocument;
-      if(!doc||doc.getElementById('autoV4Injected'))return;
-      const marker=doc.createElement('meta');marker.id='autoV4Injected';doc.head.appendChild(marker);
-      const s=doc.createElement('script');s.src='/ine-sacos-granel-automatico-v4.js';doc.body.appendChild(s);
+      if(!doc||doc.getElementById('autoV5Injected'))return;
+      const marker=doc.createElement('meta');marker.id='autoV5Injected';doc.head.appendChild(marker);
+      const s=doc.createElement('script');s.src='/ine-sacos-granel-automatico-v5.js';doc.body.appendChild(s);
     }catch(e){console.error('Automatic module injection failed',e)}
   });
 })();
