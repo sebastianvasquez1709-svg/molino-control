@@ -1,62 +1,114 @@
 function renderGuides(){
+  const overlay=document.getElementById('loadingOverlay');
+  if(overlay)overlay.classList.remove('show');
+
   const source=Array.isArray(state.snapshot?.guides)?state.snapshot.guides:[];
-  const normRow=(g)=>({
-    folio:g.folio??g.numero??g.nro??g.guia??'',
-    fecha:g.fecha??g.date??'',
-    cliente:g.cliente??g.razonSocial??g.nombreCliente??'',
-    rut:g.rut??g.RUT??'',
-    destino:g.destino??g.direccion??g.direccionEntrega??'',
-    comuna:g.comuna??'',
-    estado:g.estado??g.status??'Emitida',
-    oc:g.oc??g.ordenCompra??g.orden??'',
-    productos:Array.isArray(g.items)?g.items:(Array.isArray(g.detalle)?g.detalle:[]),
-    kg:n(g.kg??g.totalKg??g.pesoKg??0),
-    sacos:n(g.sacos??g.totalSacos??0),
-    observacion:g.observacion??g.obs??''
+  const clients=Array.isArray(state.snapshot?.clients)?state.snapshot.clients:[];
+  const norm=v=>typeof normalize==='function'?normalize(v):String(v??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'');
+  const pick=(o,keys)=>{for(const k of keys){if(o&&o[k]!=null&&String(o[k]).trim()!=='')return o[k]}return ''};
+  const clientIndex=new Map();
+  clients.forEach(c=>{
+    const rut=norm(pick(c,['rut','RUT']));
+    const name=norm(pick(c,['nombre','razon_social','razonSocial','nombre_fantasia','nombreFantasia']));
+    if(rut)clientIndex.set(rut,c);
+    if(name)clientIndex.set(name,c);
   });
+  const resolveClient=(g,rut,rawName)=>{
+    const byRut=clientIndex.get(norm(rut));
+    if(byRut)return byRut;
+    const n=norm(rawName);
+    if(n){
+      const exact=clientIndex.get(n);
+      if(exact)return exact;
+      const found=clients.find(c=>{const cn=norm(pick(c,['nombre','razon_social','razonSocial','nombre_fantasia','nombreFantasia']));return cn&&(cn===n||cn.includes(n)||n.includes(cn))});
+      if(found)return found;
+    }
+    return null;
+  };
+  const formatDate=v=>{
+    if(!v)return '';
+    const s=String(v);
+    const d=new Date(s);
+    if(Number.isNaN(d.getTime()))return s;
+    return d.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit',year:'numeric'});
+  };
+  const normalizeItems=g=>{
+    if(Array.isArray(g.items)&&g.items.length)return g.items;
+    if(Array.isArray(g.detalle)&&g.detalle.length)return g.detalle;
+    const scalar=pick(g,['producto','product','descripcion','detalle','producto_nombre']);
+    if(scalar)return [{producto:scalar,kg:pick(g,['kg','kilos','cantidadKg','totalKg']),sacos:pick(g,['sacos','cantidadSacos','totalSacos'])}];
+    return [];
+  };
+  const normRow=g=>{
+    const rut=pick(g,['rut','RUT','rutCliente','rut_receptor','receptorRut']);
+    const rawClient=pick(g,['cliente','razonSocial','nombreCliente','receptor','receptorNombre']);
+    const matched=resolveClient(g,rut,rawClient);
+    const productos=normalizeItems(g);
+    return {
+      folio:pick(g,['folio','numero','nro','guia','numeroGuia']),
+      fecha:formatDate(pick(g,['fecha','date','fechaEmision','fecha_emision'])),
+      cliente:rawClient||pick(matched,['nombre','razon_social','razonSocial','nombre_fantasia','nombreFantasia'])||'Cliente no identificado',
+      rut:rut||pick(matched,['rut','RUT']),
+      destino:pick(g,['destino','direccion','direccionEntrega','direccion_entrega','lugarEntrega']),
+      comuna:pick(g,['comuna','comunaEntrega','comuna_entrega'])||pick(matched,['comuna']),
+      estado:pick(g,['estado','status','estadoGuia'])||'Emitida',
+      oc:pick(g,['oc','ordenCompra','orden','orden_compra']),
+      productos,
+      kg:n(pick(g,['kg','kilos','cantidadKg','totalKg'])||0),
+      sacos:n(pick(g,['sacos','cantidadSacos','totalSacos'])||0),
+      observacion:pick(g,['observacion','obs','observaciones'])
+    };
+  };
   const rows=source.map(normRow);
-  const q=String(state.search.guides||'').trim().toLowerCase();
-  const allMatches=(term, r)=>!term||[r.folio,r.fecha,r.cliente,r.rut,r.destino,r.comuna,r.estado,r.oc,r.observacion,...r.productos.flatMap(x=>[x?.producto,x?.detalle,x?.unidad])].join(' ').toLowerCase().includes(term);
   const states=[...new Set(rows.map(r=>String(r.estado||'Emitida')).filter(Boolean))];
   const stamp=new Date().toLocaleDateString('es-CL');
+
   $('content').innerHTML=`
-    <div class="card invoiceModule">
+    <style>
+      .guideRoot{min-width:0}
+      .guideTableWrap{max-height:calc(100vh - 330px);min-height:320px;overflow:auto}
+      .guideTable{width:100%;table-layout:fixed}
+      .guideTable th,.guideTable td{white-space:normal;word-break:break-word;overflow-wrap:anywhere;vertical-align:top}
+      .guideTable th:nth-child(1){width:7%}.guideTable th:nth-child(2){width:9%}.guideTable th:nth-child(3){width:18%}.guideTable th:nth-child(4){width:16%}.guideTable th:nth-child(5){width:7%}.guideTable th:nth-child(6){width:15%}.guideTable th:nth-child(7){width:7%}.guideTable th:nth-child(8){width:7%}.guideTable th:nth-child(9){width:7%}.guideTable th:nth-child(10){width:7%}
+      .guideClient{font-weight:800;color:#123a78}.guideMeta{display:block;margin-top:2px}.guideDetailItem{margin-bottom:4px}.guideDetailItem:last-child{margin-bottom:0}
+      .guideDetailItem strong{display:block}.guideDetailItem span{font-size:11px;color:#667085}
+      .guideEmpty{padding:30px;text-align:center;color:#667085}
+    </style>
+    <div class="card invoiceModule guideRoot">
       <div class="sectionTitle">
         <div><div class="pill">GUÍAS DE DESPACHO</div><h3 style="margin-top:8px">Control profesional de guías</h3><div class="note">Consulta, filtra, revisa y prepara tus guías para operación y entrega.</div></div>
         <div class="toolbar"><button class="secondary" type="button" id="guideClear">Limpiar</button><button class="secondary" type="button" id="guideCsv">⬇️ Exportar CSV</button><button class="primary" type="button" id="guidePrint">🖨️ Imprimir</button></div>
       </div>
       <div class="kpiRow" style="margin:14px 0" id="guideKpis"></div>
       <div class="card" style="padding:13px;background:#f8fafc;margin-bottom:12px">
-        <div class="toolbar">
-          <input id="guideQ" class="grow" placeholder="Buscar folio, cliente, RUT, destino, O/C o producto…" value="${esc(state.search.guides||'')}">
-          <select id="guideStatus"><option value="">Todos los estados</option>${states.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select>
-        </div>
+        <div class="toolbar"><input id="guideQ" class="grow" placeholder="Buscar folio, cliente, RUT, destino, O/C o producto…" value="${esc(state.search.guides||'')}"><select id="guideStatus"><option value="">Todos los estados</option>${states.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select></div>
       </div>
       <div class="invoiceResultsHeader"><span id="guideCount"></span><span>Consulta emitida ${stamp}</span></div>
-      <div class="tableWrap invoiceTableWrap"><table class="table invoiceTable"><thead><tr><th>Guía</th><th>Fecha</th><th>Cliente / RUT</th><th>Destino</th><th>O/C</th><th>Detalle</th><th>KG</th><th>Sacos</th><th>Estado</th><th>Observación</th></tr></thead><tbody id="guideBody"></tbody></table></div>
+      <div class="tableWrap guideTableWrap"><table class="table guideTable"><thead><tr><th>Guía</th><th>Fecha</th><th>Cliente / RUT</th><th>Destino</th><th>O/C</th><th>Detalle</th><th>KG</th><th>Sacos</th><th>Estado</th><th>Observación</th></tr></thead><tbody id="guideBody"></tbody></table></div>
     </div>`;
 
   const getList=()=>{
     const term=String($('guideQ')?.value||'').trim().toLowerCase();
     const sf=String($('guideStatus')?.value||'');
-    return rows.filter(r=>allMatches(term,r)&&(!sf||String(r.estado)===sf));
+    const normSearch=v=>String(v??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    return rows.filter(r=>{const hay=normSearch([r.folio,r.fecha,r.cliente,r.rut,r.destino,r.comuna,r.estado,r.oc,r.observacion,...r.productos.flatMap(x=>[x?.producto,x?.detalle,x?.unidad])].join(' '));return (!term||hay.includes(term))&&(!sf||String(r.estado)===sf)});
   };
   const paint=()=>{
     const list=getList();
     $('guideCount').textContent=list.length+' guía'+(list.length===1?'':'s')+' encontrada'+(list.length===1?'':'s')+'.';
-    const totalKg=list.reduce((a,r)=>a+n(r.kg),0), totalSacos=list.reduce((a,r)=>a+n(r.sacos),0);
+    const totalKg=list.reduce((a,r)=>a+n(r.kg),0),totalSacos=list.reduce((a,r)=>a+n(r.sacos),0);
     $('guideKpis').innerHTML='<div class="kpi"><small>Guías visibles</small><b>'+list.length+'</b></div><div class="kpi"><small>KG visibles</small><b>'+money(totalKg)+'</b></div><div class="kpi"><small>Sacos visibles</small><b>'+money(totalSacos)+'</b></div><div class="kpi"><small>Estados</small><b>'+new Set(list.map(r=>r.estado)).size+'</b></div>';
     $('guideBody').innerHTML=list.map(r=>{
-      const detail=r.productos.length?r.productos.map(x=>'<div><strong>'+esc(x?.producto||x?.detalle||'Ítem')+'</strong><span class="note">'+(x?.kg!=null?' · '+money(x.kg)+' KG':'')+(x?.sacos!=null?' · '+money(x.sacos)+' sacos':'')+'</span></div>').join(''):'<span class="note">Sin detalle registrado</span>';
-      return '<tr><td><strong>N° '+esc(r.folio)+'</strong></td><td>'+esc(r.fecha)+'</td><td><strong>'+esc(r.cliente||'Sin cliente')+'</strong><br><span class="note">'+esc(formatRut(r.rut||'RUT no informado'))+'</span></td><td>'+esc([r.destino,r.comuna].filter(Boolean).join(' · '))+'</td><td>'+esc(r.oc||'')+'</td><td>'+detail+'</td><td><b>'+money(r.kg)+'</b></td><td>'+money(r.sacos)+'</td><td><span class="pill">'+esc(r.estado)+'</span></td><td>'+esc(r.observacion||'')+'</td></tr>';
-    }).join('')||'<tr><td colspan="10" class="empty">No hay guías que coincidan con el filtro.</td></tr>';
+      const detail=r.productos.length?r.productos.map(x=>'<div class="guideDetailItem"><strong>'+esc(x?.producto||x?.detalle||'Ítem')+'</strong><span>'+((x?.kg!=null&&x?.kg!=='')?' · '+money(x.kg)+' KG':'')+((x?.sacos!=null&&x?.sacos!=='')?' · '+money(x.sacos)+' sacos':'')+'</span></div>').join(''):'<span class="note">Sin detalle registrado</span>';
+      return '<tr><td><strong>N° '+esc(r.folio||'—')+'</strong></td><td>'+esc(r.fecha||'—')+'</td><td><span class="guideClient">'+esc(r.cliente)+'</span><span class="note guideMeta">'+esc(formatRut(r.rut||'RUT no informado'))+'</span></td><td>'+esc([r.destino,r.comuna].filter(Boolean).join(' · ')||'Sin destino')+'</td><td>'+esc(r.oc||'—')+'</td><td>'+detail+'</td><td><b>'+money(r.kg)+'</b></td><td>'+money(r.sacos)+'</td><td><span class="pill">'+esc(r.estado)+'</span></td><td>'+esc(r.observacion||'—')+'</td></tr>';
+    }).join('')||'<tr><td colspan="10" class="guideEmpty">No hay guías que coincidan con el filtro.</td></tr>';
   };
   let timer;
   $('guideQ').oninput=e=>{state.search.guides=e.target.value;clearTimeout(timer);timer=setTimeout(paint,100)};
   $('guideStatus').onchange=paint;
   $('guideClear').onclick=()=>{state.search.guides='';renderGuides()};
   $('guideCsv').onclick=()=>{
-    const list=getList(), out=['Guía;Fecha;Cliente;RUT;Destino;O/C;Estado;Producto;KG;Sacos;Observación'];
+    const list=getList(),out=['Guía;Fecha;Cliente;RUT;Destino;O/C;Estado;Producto;KG;Sacos;Observación'];
     list.forEach(r=>{if(r.productos.length)r.productos.forEach(x=>out.push([r.folio,r.fecha,r.cliente,r.rut,r.destino,r.oc,r.estado,x?.producto||x?.detalle||'',x?.kg||'',x?.sacos||'',r.observacion].map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')));else out.push([r.folio,r.fecha,r.cliente,r.rut,r.destino,r.oc,r.estado,'',r.kg,r.sacos,r.observacion].map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';'))});
     const a=document.createElement('a'),u=URL.createObjectURL(new Blob(['\ufeff'+out.join('\n')],{type:'text/csv;charset=utf-8'}));a.href=u;a.download='guias_molino_control.csv';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);
   };
