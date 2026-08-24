@@ -31,7 +31,7 @@ if(!app.includes("['counter','📦 Sacos / Granel']"))throw new Error('Falta nav
 if(!app.includes('function renderExistenceReports(){'))throw new Error('Falta el módulo de informes Sacos/Granel desde Registro.');
 if(!app.includes("['counterExistence','📊 Informes Sacos / Granel']"))throw new Error('Falta navegación a informes Sacos/Granel.');
 if(!app.includes('counterExistence:renderExistenceReports'))throw new Error('Falta renderizador de informes Sacos/Granel.');
-if(!app.includes('COUNTER SNAPSHOT COMPAT V1'))throw new Error('Falta compatibilidad con snapshots anteriores del Maestro.');
+if(!app.includes('COUNTER_SNAPSHOT_COMPAT_V1'))throw new Error('Falta compatibilidad con snapshots anteriores del Maestro.');
 if(!worker.includes('COUNTER SACOS GRANEL V1'))throw new Error('Falta el motor del contador en excel-worker.js.');
 if(!worker.includes('counter, iva: iv'))throw new Error('El snapshot no publica metrics.counter.');
 console.log('GUIDES + FAST DOCUMENT NAV + CLIENT DOCUMENT SEARCH + COUNTER SACOS/GRANEL + SNAPSHOT COMPAT + EXISTENCE SACOS/GRANEL REPORTS: PASS');
