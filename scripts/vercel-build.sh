@@ -10,7 +10,7 @@ node scripts/patch-existence-sacogranel-reports-v1.js
 node scripts/patch-reports-sacos-undefined-v1.js
 node scripts/patch-formula-zero-rows-v1.js
 node scripts/patch-reports-cloud-v7.js
-node scripts/patch-dispatch-pro-v11.js
+node scripts/patch-dispatch-bridge-v1.js
 node --check app.js
 node --check scripts/patch-cloud-persistence-v1.js
 node --check scripts/patch-guides-professional-v1.js
@@ -21,8 +21,9 @@ node --check scripts/patch-existence-sacogranel-reports-v1.js
 node --check scripts/patch-reports-sacos-undefined-v1.js
 node --check scripts/patch-formula-zero-rows-v1.js
 node --check scripts/patch-reports-cloud-v7.js
-node --check scripts/patch-dispatch-pro-v11.js
+node --check scripts/patch-dispatch-bridge-v1.js
 node --check reports-maestro-v11.js
+node --check dispatch-controls-v12.js
 node --check scripts/counter-worker-frag.js
 node --check excel-worker.js
 node --check ine-engine-maestro.js
@@ -31,19 +32,21 @@ const fs=require('fs');
 const app=fs.readFileSync('app.js','utf8');
 const worker=fs.readFileSync('excel-worker.js','utf8');
 const report=fs.readFileSync('reports-maestro-v11.js','utf8');
+const dispatch=fs.readFileSync('dispatch-controls-v12.js','utf8');
 if(!app.includes('function renderGuides(){'))throw new Error('Falta Guías profesional.');
 if(!app.includes('FAST DOCUMENT MODULES V1'))throw new Error('Falta optimización documental.');
 if(!app.includes('function renderInvoices(){')||!app.includes('function renderBoletas(){'))throw new Error('Facturas/Boletas fuera de servicio.');
 if(!app.includes('function renderSacosGranel(){'))throw new Error('Falta contador Sacos/Granel.');
 if(!app.includes("['counterExistence','📊 Informes Sacos / Granel']"))throw new Error('Falta navegación de informes Sacos/Granel.');
-if(!app.includes('DISPATCH PRO V11'))throw new Error('No se aplicó el módulo profesional de Despachos.');
-if(!app.includes('editDispatchV11')||!app.includes('deleteDispatchV11'))throw new Error('Faltan acciones de modificar/eliminar despacho.');
-if(!app.includes('dispatchEnhanceHost'))throw new Error('Falta corrección de scroll de despachos.');
+if(!app.includes('MolinoDispatchBridge'))throw new Error('Falta bridge seguro de Despachos.');
+if(!dispatch.includes('data-dv12-edit')||!dispatch.includes('data-dv12-delete'))throw new Error('Faltan acciones de modificar/eliminar despacho.');
+if(!dispatch.includes('dispatchEnhancedV12'))throw new Error('Falta corrección de scroll de despachos.');
 if(!worker.includes('COUNTER SACOS GRANEL V1'))throw new Error('Falta motor del contador en worker.');
 if(!report.includes('molino_sacos_granel_report_v3'))throw new Error('Falta RPC V11 de informes.');
 if(!report.includes('GRANEL AF = KG'))throw new Error('Falta auditoría específica de granel.');
 if(report.includes('JULY_SNAPSHOT'))throw new Error('El informe V11 no puede contener snapshots hardcodeados.');
-console.log('DISPATCH UI V11 CHECK: PASS');
+console.log('DISPATCH BRIDGE V1 CHECK: PASS');
+console.log('DISPATCH CONTROLS V12 CHECK: PASS');
 console.log('REPORTS SACOS/GRANEL V11 CHECK: PASS');
 console.log('NO HARDCODED REPORT SNAPSHOT CHECK: PASS');
 NODE
@@ -56,13 +59,15 @@ const fs=require('fs');
 const p='public/index.html';
 let s=fs.readFileSync(p,'utf8');
 s=s.replace(/<script src="\/ine-sacos-granel-automatico-v4\.js"><\/script>\s*/g,'');
-const marker='<script src="/reports-maestro-v11.js"></script>';
-if(!s.includes(marker)){
-  if(s.includes('</body></html>')) s=s.replace('</body></html>', marker+'\n</body></html>');
-  else throw new Error('No se encontró cierre de index.html para integrar Reportes V11.');
-  fs.writeFileSync(p,s);
-}
-if(!fs.readFileSync(p,'utf8').includes('reports-maestro-v11.js'))throw new Error('No se integró Reportes V11 al index publicado.');
-if(fs.readFileSync(p,'utf8').includes('ine-sacos-granel-automatico-v4.js'))throw new Error('No se debe publicar el renderer V4 legacy.');
-console.log('AUTO INE/SACOS/GRANEL V11 INDEX INTEGRATION: PASS');
+s=s.replace(/<script src="\/dispatch-controls-v12\.js"><\/script>\s*/g,'');
+s=s.replace(/<script src="\/reports-maestro-v11\.js"><\/script>\s*/g,'');
+const marker1='<script src="/dispatch-controls-v12.js"></script>';
+const marker2='<script src="/reports-maestro-v11.js"></script>';
+const injected=marker1+'\n'+marker2;
+if(s.includes('</body></html>'))s=s.replace('</body></html>',injected+'\n</body></html>');else throw new Error('No se encontró cierre de index.html.');
+fs.writeFileSync(p,s);
+const pub=fs.readFileSync(p,'utf8');
+if(!pub.includes(marker1)||!pub.includes(marker2))throw new Error('No se integraron los módulos finales.');
+if(pub.includes('ine-sacos-granel-automatico-v4.js'))throw new Error('No se debe publicar el renderer V4 legacy.');
+console.log('FINAL MODULE INDEX INTEGRATION: PASS');
 NODE
