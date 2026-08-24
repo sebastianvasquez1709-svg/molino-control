@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-# Stable build: reviewed Guides + fast document navigation + audited Sacos/Granel counter + existence reports + automatic INE/Sacos/Granel registry + durable cloud persistence.
+# Stable build: reviewed Guides + fast document navigation + audited Sacos/Granel counter + existence reports + Excel-style Sacos/Granel reports + durable cloud persistence.
 node scripts/patch-cloud-persistence-v1.js
 node scripts/patch-guides-professional-v1.js
 node scripts/patch-fast-docs-v1.js
@@ -8,6 +8,7 @@ node scripts/patch-counter-sacogranel-v2.js
 node scripts/patch-counter-snapshot-compat-v1.js
 node scripts/patch-existence-sacogranel-reports-v1.js
 node scripts/patch-reports-sacos-undefined-v1.js
+node scripts/patch-formula-zero-rows-v1.js
 node scripts/patch-reports-cloud-v7.js
 node --check app.js
 node --check scripts/patch-cloud-persistence-v1.js
@@ -17,14 +18,16 @@ node --check scripts/patch-counter-sacogranel-v2.js
 node --check scripts/patch-counter-snapshot-compat-v1.js
 node --check scripts/patch-existence-sacogranel-reports-v1.js
 node --check scripts/patch-reports-sacos-undefined-v1.js
+node --check scripts/patch-formula-zero-rows-v1.js
 node --check scripts/patch-reports-cloud-v7.js
+node --check ine-sacos-granel-automatico-v7.js
+node --check ine-sacos-granel-automatico-v8.js
 node --check < scripts/existence-sacogranel-reports-v1.jsfrag
 node --check scripts/counter-worker-frag.js
 node --check excel-worker.js
 node --check ine-engine-maestro.js
 node --check ine-sacos-granel-automatico-v4.js
 node --check ine-sacos-granel-automatico-v5.js
-node --check ine-sacos-granel-automatico-v7.js
 node - <<'NODE'
 const fs=require('fs');
 const app=fs.readFileSync('app.js','utf8');
@@ -32,6 +35,7 @@ const worker=fs.readFileSync('excel-worker.js','utf8');
 const auto=fs.readFileSync('ine-sacos-granel-automatico-v4.js','utf8');
 const autoV5=fs.readFileSync('ine-sacos-granel-automatico-v5.js','utf8');
 const cloud=fs.readFileSync('ine-sacos-granel-automatico-v7.js','utf8');
+const v8=fs.readFileSync('ine-sacos-granel-automatico-v8.js','utf8');
 if(app.includes("['documents','🧾 Documentos'],"))throw new Error('El módulo Documentos sigue expuesto en navegación.');
 if(!app.includes('function renderGuides(){'))throw new Error('Falta el módulo profesional de Guías.');
 if(!app.includes('guideQ')||!app.includes('guideCsv')||!app.includes('guidePrint'))throw new Error('Faltan controles profesionales de Guías.');
@@ -57,10 +61,15 @@ if(!auto.includes('TOTAL SACOS KG')||!auto.includes('TOTAL GRANEL'))throw new Er
 if(!auto.includes('Imprimir 3 formatos'))throw new Error('Falta impresión conjunta de los tres formatos.');
 if(!app.includes('REPORTS SACOS/GRANEL UNDEFINED-REFERENCE GUARD V1'))throw new Error('Falta guard contra referencia legacy sacos.');
 if(!cloud.includes('molino_sacos_granel_report'))throw new Error('Falta el RPC cloud del Maestro en V7.');
-if(!cloud.includes('Datos reales del Maestro Excel almacenado en Supabase'))throw new Error('Falta render cloud V7.');
+if(!v8.includes('FORMATO basado en el Maestro Excel original'.replace('FORMATO','Formato')))throw new Error('Falta encabezado Excel-style V8.');
+if(!v8.includes("globalThis.formulaZeroRows=[]"))throw new Error('Falta guard formulaZeroRows V8.');
+if(!v8.includes('renderGranelRight'))throw new Error('Falta formato Granel V8.');
+if(!v8.includes('renderSacosRight'))throw new Error('Falta formato Sacos V8.');
 console.log('CORE MODULES STATIC CHECK: PASS');
 console.log('MAESTRO SACOS/GRANEL PRINT ENGINE CHECK: PASS');
 console.log('CLOUD MAESTRO REPORT V7 CHECK: PASS');
+console.log('EXCEL-STYLE SACOS/GRANEL V8 CHECK: PASS');
+console.log('FORMULA_ZERO_ROWS_GUARD CHECK: PASS');
 NODE
 rm -rf public
 mkdir -p public
