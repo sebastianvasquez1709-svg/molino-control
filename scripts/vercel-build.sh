@@ -11,6 +11,13 @@ check_core(){
   node --check dispatch-controls-v12.js
 }
 
+check_fragment(){
+  label="$1"
+  file="$2"
+  echo "--- FRAGMENT CHECK: $label"
+  node --check < "$file"
+}
+
 run_patch(){
   script="$1"
   echo "--- PATCH: $script"
@@ -18,8 +25,6 @@ run_patch(){
   check_core
 }
 
-# Cada patch se aplica y se valida inmediatamente. Si un patch genera un JavaScript inválido,
-# el build se detiene en ese punto y Vercel no recibe una versión rota.
 run_patch scripts/patch-cloud-persistence-v1.js
 run_patch scripts/patch-guides-professional-v1.js
 run_patch scripts/patch-fast-docs-v1.js
@@ -32,14 +37,13 @@ run_patch scripts/patch-reports-cloud-v7.js
 run_patch scripts/patch-dispatch-bridge-v1.js
 run_patch scripts/patch-reports-v11-safe-v1.js
 
-# Validación final de archivos auxiliares y fragmentos.
-node --check scripts/counter-worker-frag.js
-node --check scripts/existence-sacogranel-reports-v1.jsfrag
-node --check scripts/guides-renderer.jsfrag
-node --check scripts/fast-docs-injection.jsfrag
-node --check scripts/dispatch-bridge-v1.jsfrag
-node --check scripts/reports-sacos-undefined-v1.jsfrag
-node --check scripts/formula-zero-rows-v1.jsfrag
+check_fragment 'counter worker' scripts/counter-worker-frag.js
+check_fragment 'existence reports' scripts/existence-sacogranel-reports-v1.jsfrag
+check_fragment 'guides renderer' scripts/guides-renderer.jsfrag
+check_fragment 'fast documents' scripts/fast-docs-injection.jsfrag
+check_fragment 'dispatch bridge' scripts/dispatch-bridge-v1.jsfrag
+check_fragment 'reports undefined guard' scripts/reports-sacos-undefined-v1.jsfrag
+check_fragment 'formula zero rows' scripts/formula-zero-rows-v1.jsfrag
 
 node - <<'NODE'
 const fs=require('fs');
