@@ -4,7 +4,6 @@
   "outputDirectory": "public",
   "rewrites": [
     { "source": "/cloud", "destination": "/cloud.html" },
-    { "source": "/cloud/", "destination": "/cloud.html" },
-    { "source": "/", "destination": "/index-auto.html" }
+    { "source": "/cloud/", "destination": "/cloud.html" }
   ]
 }
