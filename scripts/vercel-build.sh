@@ -25,7 +25,7 @@ if(!app.includes('FAST DOCUMENT MODULES V1'))throw new Error('Falta la optimizac
 if(!app.includes('openClientDocuments'))throw new Error('Falta búsqueda de documentos por cliente.');
 if(!app.includes('function renderSacosGranel(){'))throw new Error('Falta el módulo Contador Sacos/Granel.');
 if(!app.includes("['counter','📦 Sacos / Granel']"))throw new Error('Falta navegación al contador.');
-if(!app.includes('COUNTER SNAPSHOT COMPAT V1'))throw new Error('Falta compatibilidad con snapshots anteriores del Maestro.');
+if(!app.includes('COUNTER_SNAPSHOT_COMPAT_V1'))throw new Error('Falta compatibilidad con snapshots anteriores del Maestro.');
 if(!worker.includes('COUNTER SACOS GRANEL V1'))throw new Error('Falta el motor del contador en excel-worker.js.');
 if(!worker.includes('counter, iva: iv'))throw new Error('El snapshot no publica metrics.counter.');
 console.log('GUIDES + FAST DOCUMENT NAV + CLIENT DOCUMENT SEARCH + COUNTER SACOS/GRANEL + SNAPSHOT COMPAT: PASS');
