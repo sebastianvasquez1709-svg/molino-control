@@ -9,11 +9,10 @@
   frame.addEventListener('load',()=>{
     try{
       const doc=frame.contentDocument;
-      if(!doc||doc.getElementById('autoV6Injected'))return;
-      const marker=doc.createElement('meta');marker.id='autoV6Injected';doc.head.appendChild(marker);
-      const s5=doc.createElement('script');s5.src='/ine-sacos-granel-automatico-v5.js';doc.body.appendChild(s5);
-      const s6=doc.createElement('script');s6.src='/ine-sacos-granel-automatico-v6.js';doc.body.appendChild(s6);
-    }catch(e){console.error('Automatic module injection failed',e)}
+      if(!doc||doc.getElementById('autoV7Injected'))return;
+      const marker=doc.createElement('meta');marker.id='autoV7Injected';doc.head.appendChild(marker);
+      const s=doc.createElement('script');s.src='/ine-sacos-granel-automatico-v7.js?v=cloud';doc.body.appendChild(s);
+    }catch(e){console.error('Cloud reports injection failed',e)}
   });
 })();
 </script>
