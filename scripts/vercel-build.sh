@@ -10,7 +10,7 @@ node scripts/patch-existence-sacogranel-reports-v1.js
 node scripts/patch-reports-sacos-undefined-v1.js
 node scripts/patch-formula-zero-rows-v1.js
 node scripts/patch-reports-cloud-v7.js
-node scripts/patch-dispatch-pro-v9.js
+node scripts/patch-dispatch-pro-v10.js
 node --check app.js
 node --check scripts/patch-cloud-persistence-v1.js
 node --check scripts/patch-guides-professional-v1.js
@@ -21,30 +21,29 @@ node --check scripts/patch-existence-sacogranel-reports-v1.js
 node --check scripts/patch-reports-sacos-undefined-v1.js
 node --check scripts/patch-formula-zero-rows-v1.js
 node --check scripts/patch-reports-cloud-v7.js
-node --check scripts/patch-dispatch-pro-v9.js
+node --check scripts/patch-dispatch-pro-v10.js
 node --check reports-maestro-v11.js
 node --check scripts/counter-worker-frag.js
 node --check excel-worker.js
 node --check ine-engine-maestro.js
-node --check ine-sacos-granel-automatico-v4.js
 node - <<'NODE'
 const fs=require('fs');
 const app=fs.readFileSync('app.js','utf8');
 const worker=fs.readFileSync('excel-worker.js','utf8');
-const build=fs.readFileSync('reports-maestro-v11.js','utf8');
+const report=fs.readFileSync('reports-maestro-v11.js','utf8');
 if(!app.includes('function renderGuides(){'))throw new Error('Falta Guías profesional.');
 if(!app.includes('FAST DOCUMENT MODULES V1'))throw new Error('Falta optimización documental.');
 if(!app.includes('function renderInvoices(){')||!app.includes('function renderBoletas(){'))throw new Error('Facturas/Boletas fuera de servicio.');
 if(!app.includes('function renderSacosGranel(){'))throw new Error('Falta contador Sacos/Granel.');
 if(!app.includes("['counterExistence','📊 Informes Sacos / Granel']"))throw new Error('Falta navegación de informes Sacos/Granel.');
-if(!app.includes('DISPATCH PRO V9'))throw new Error('No se aplicó el módulo profesional de Despachos.');
+if(!app.includes('DISPATCH PRO V10'))throw new Error('No se aplicó el módulo profesional de Despachos.');
 if(!app.includes('editDispatchById')||!app.includes('deleteDispatchById'))throw new Error('Faltan acciones de modificar/eliminar despacho.');
 if(!app.includes('dispatchTableViewport'))throw new Error('Falta corrección de scroll de despachos.');
 if(!worker.includes('COUNTER SACOS GRANEL V1'))throw new Error('Falta motor del contador en worker.');
-if(!build.includes('molino_sacos_granel_report_v3'))throw new Error('Falta RPC V11 de informes.');
-if(!build.includes('GRANEL AF = KG'))throw new Error('Falta auditoría específica de granel.');
-if(build.includes('JULY_SNAPSHOT'))throw new Error('El informe V11 no puede contener snapshots hardcodeados.');
-console.log('DISPATCH PRO V9 CHECK: PASS');
+if(!report.includes('molino_sacos_granel_report_v3'))throw new Error('Falta RPC V11 de informes.');
+if(!report.includes('GRANEL AF = KG'))throw new Error('Falta auditoría específica de granel.');
+if(report.includes('JULY_SNAPSHOT'))throw new Error('El informe V11 no puede contener snapshots hardcodeados.');
+console.log('DISPATCH PRO V10 CHECK: PASS');
 console.log('REPORTS SACOS/GRANEL V11 CHECK: PASS');
 console.log('NO HARDCODED REPORT SNAPSHOT CHECK: PASS');
 NODE
