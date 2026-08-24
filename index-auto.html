@@ -9,10 +9,10 @@
   frame.addEventListener('load',()=>{
     try{
       const doc=frame.contentDocument;
-      if(!doc||doc.getElementById('autoV7Injected'))return;
-      const marker=doc.createElement('meta');marker.id='autoV7Injected';doc.head.appendChild(marker);
-      const s=doc.createElement('script');s.src='/ine-sacos-granel-automatico-v7.js?v=cloud';doc.body.appendChild(s);
-    }catch(e){console.error('Cloud reports injection failed',e)}
+      if(!doc||doc.getElementById('autoV8Injected'))return;
+      const marker=doc.createElement('meta');marker.id='autoV8Injected';doc.head.appendChild(marker);
+      const s=doc.createElement('script');s.src='/ine-sacos-granel-automatico-v8.js?v=excel-format-v8';doc.body.appendChild(s);
+    }catch(e){console.error('Excel style reports injection failed',e)}
   });
 })();
 </script>
