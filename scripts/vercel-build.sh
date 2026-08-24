@@ -41,7 +41,6 @@ check_fragment 'counter worker' scripts/counter-worker-frag.js
 check_fragment 'existence reports' scripts/existence-sacogranel-reports-v1.jsfrag
 check_fragment 'guides renderer' scripts/guides-renderer.jsfrag
 check_fragment 'fast documents' scripts/fast-docs-injection.jsfrag
-check_fragment 'dispatch bridge' scripts/dispatch-bridge-v1.jsfrag
 check_fragment 'reports undefined guard' scripts/reports-sacos-undefined-v1.jsfrag
 check_fragment 'formula zero rows' scripts/formula-zero-rows-v1.jsfrag
 
