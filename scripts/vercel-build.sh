@@ -1,15 +1,18 @@
 #!/bin/sh
 set -eu
-# Stable build: reviewed Guides + fast document navigation + audited Sacos/Granel counter.
+# Stable build: reviewed Guides + fast document navigation + audited Sacos/Granel counter + existence reports.
 node scripts/patch-guides-professional-v1.js
 node scripts/patch-fast-docs-v1.js
 node scripts/patch-counter-sacogranel-v2.js
 node scripts/patch-counter-snapshot-compat-v1.js
+node scripts/patch-existence-sacogranel-reports-v1.js
 node --check app.js
 node --check scripts/patch-guides-professional-v1.js
 node --check scripts/patch-fast-docs-v1.js
 node --check scripts/patch-counter-sacogranel-v2.js
 node --check scripts/patch-counter-snapshot-compat-v1.js
+node --check scripts/patch-existence-sacogranel-reports-v1.js
+node --check scripts/existence-sacogranel-reports-v1.jsfrag
 node --check scripts/counter-worker-frag.js
 node --check excel-worker.js
 node --check ine-engine-maestro.js
@@ -25,10 +28,13 @@ if(!app.includes('FAST DOCUMENT MODULES V1'))throw new Error('Falta la optimizac
 if(!app.includes('openClientDocuments'))throw new Error('Falta búsqueda de documentos por cliente.');
 if(!app.includes('function renderSacosGranel(){'))throw new Error('Falta el módulo Contador Sacos/Granel.');
 if(!app.includes("['counter','📦 Sacos / Granel']"))throw new Error('Falta navegación al contador.');
-if(!app.includes('COUNTER_SNAPSHOT_COMPAT_V1'))throw new Error('Falta compatibilidad con snapshots anteriores del Maestro.');
+if(!app.includes('function renderExistenceReports(){'))throw new Error('Falta el módulo de informes Sacos/Granel desde Registro.');
+if(!app.includes("['counterExistence','📊 Informes Sacos / Granel']"))throw new Error('Falta navegación a informes Sacos/Granel.');
+if(!app.includes('counterExistence:renderExistenceReports'))throw new Error('Falta renderizador de informes Sacos/Granel.');
+if(!app.includes('COUNTER SNAPSHOT COMPAT V1'))throw new Error('Falta compatibilidad con snapshots anteriores del Maestro.');
 if(!worker.includes('COUNTER SACOS GRANEL V1'))throw new Error('Falta el motor del contador en excel-worker.js.');
 if(!worker.includes('counter, iva: iv'))throw new Error('El snapshot no publica metrics.counter.');
-console.log('GUIDES + FAST DOCUMENT NAV + CLIENT DOCUMENT SEARCH + COUNTER SACOS/GRANEL + SNAPSHOT COMPAT: PASS');
+console.log('GUIDES + FAST DOCUMENT NAV + CLIENT DOCUMENT SEARCH + COUNTER SACOS/GRANEL + SNAPSHOT COMPAT + EXISTENCE SACOS/GRANEL REPORTS: PASS');
 NODE
 rm -rf public
 mkdir -p public
