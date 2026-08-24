@@ -11,6 +11,7 @@ node scripts/patch-reports-sacos-undefined-v1.js
 node scripts/patch-formula-zero-rows-v1.js
 node scripts/patch-reports-cloud-v7.js
 node scripts/patch-dispatch-bridge-v1.js
+node scripts/patch-reports-v11-safe-v1.js
 node --check app.js
 node --check scripts/patch-cloud-persistence-v1.js
 node --check scripts/patch-guides-professional-v1.js
@@ -22,6 +23,7 @@ node --check scripts/patch-reports-sacos-undefined-v1.js
 node --check scripts/patch-formula-zero-rows-v1.js
 node --check scripts/patch-reports-cloud-v7.js
 node --check scripts/patch-dispatch-bridge-v1.js
+node --check scripts/patch-reports-v11-safe-v1.js
 node --check reports-maestro-v11.js
 node --check dispatch-controls-v12.js
 node --check scripts/counter-worker-frag.js
@@ -45,9 +47,11 @@ if(!worker.includes('COUNTER SACOS GRANEL V1'))throw new Error('Falta motor del 
 if(!report.includes('molino_sacos_granel_report_v3'))throw new Error('Falta RPC V11 de informes.');
 if(!report.includes('GRANEL AF = KG'))throw new Error('Falta auditoría específica de granel.');
 if(report.includes('JULY_SNAPSHOT'))throw new Error('El informe V11 no puede contener snapshots hardcodeados.');
+if(report.includes("toast?.('No hay filas para exportar.','warn')"))throw new Error('Quedó una referencia toast no segura en Reportes V11.');
 console.log('DISPATCH BRIDGE V1 CHECK: PASS');
 console.log('DISPATCH CONTROLS V12 CHECK: PASS');
 console.log('REPORTS SACOS/GRANEL V11 CHECK: PASS');
+console.log('REPORTS V11 SAFE GUARD CHECK: PASS');
 console.log('NO HARDCODED REPORT SNAPSHOT CHECK: PASS');
 NODE
 rm -rf public
