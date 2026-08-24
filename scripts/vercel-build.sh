@@ -12,7 +12,7 @@ node --check scripts/patch-fast-docs-v1.js
 node --check scripts/patch-counter-sacogranel-v2.js
 node --check scripts/patch-counter-snapshot-compat-v1.js
 node --check scripts/patch-existence-sacogranel-reports-v1.js
-node --check scripts/existence-sacogranel-reports-v1.jsfrag
+node --check < scripts/existence-sacogranel-reports-v1.jsfrag
 node --check scripts/counter-worker-frag.js
 node --check excel-worker.js
 node --check ine-engine-maestro.js
