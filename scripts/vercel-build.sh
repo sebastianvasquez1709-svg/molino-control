@@ -41,8 +41,6 @@ check_fragment 'counter worker' scripts/counter-worker-frag.js
 check_fragment 'existence reports' scripts/existence-sacogranel-reports-v1.jsfrag
 check_fragment 'guides renderer' scripts/guides-renderer.jsfrag
 check_fragment 'fast documents' scripts/fast-docs-injection.jsfrag
-check_fragment 'reports undefined guard' scripts/reports-sacos-undefined-v1.jsfrag
-check_fragment 'formula zero rows' scripts/formula-zero-rows-v1.jsfrag
 
 node - <<'NODE'
 const fs=require('fs');
@@ -51,6 +49,7 @@ const worker=fs.readFileSync('excel-worker.js','utf8');
 const report=fs.readFileSync('reports-maestro-v11.js','utf8');
 const dispatch=fs.readFileSync('dispatch-controls-v12.js','utf8');
 const guides=fs.readFileSync('scripts/guides-renderer.jsfrag','utf8');
+const fast=fs.readFileSync('scripts/fast-docs-injection.jsfrag','utf8');
 if(!app.includes('function renderGuides(){'))throw new Error('Falta Guías profesional.');
 if(!app.includes('FAST DOCUMENT MODULES V1'))throw new Error('Falta optimización documental.');
 if(!app.includes('function renderInvoices(){')||!app.includes('function renderBoletas(){'))throw new Error('Facturas/Boletas fuera de servicio.');
@@ -64,12 +63,18 @@ if(!report.includes('molino_sacos_granel_report_v3'))throw new Error('Falta RPC 
 if(!report.includes('GRANEL AF = KG'))throw new Error('Falta auditoría específica de granel.');
 if(report.includes('JULY_SNAPSHOT'))throw new Error('El informe V11 no puede contener snapshots hardcodeados.');
 if(report.includes("toast?.('No hay filas para exportar.','warn')"))throw new Error('Quedó una referencia toast no segura en Reportes V11.');
-if(!guides.includes('const csvCell='))throw new Error('Guías no usa el helper CSV seguro.');
+if(!guides.includes('const csvCell=')||!guides.includes('const csvLine='))throw new Error('Guías no usa helpers CSV seguros.');
+if((app.match(/FAST DOCUMENT MODULES V1/g)||[]).length!==1)throw new Error('La inyección FAST DOCUMENTS quedó duplicada.');
+if((app.match(/MolinoDispatchBridge/g)||[]).length!==1)throw new Error('El bridge de Despachos quedó duplicado.');
+if((app.match(/REPORTS SACOS\/GRANEL UNDEFINED-REFERENCE GUARD V1/g)||[]).length!==1)throw new Error('El guard de informes quedó duplicado.');
+if((app.match(/FORMULA_ZERO_ROWS_GUARD_V1/g)||[]).length!==1)throw new Error('El guard formulaZeroRows quedó duplicado.');
+if((fast.match(/FAST DOCUMENT MODULES V1/g)||[]).length!==1)throw new Error('Fragmento FAST DOCUMENTS inválido.');
 console.log('CORE MODULES STATIC CHECK: PASS');
 console.log('GUIDES RENDERER STATIC CHECK: PASS');
 console.log('DISPATCH CONTROLS V12 CHECK: PASS');
 console.log('REPORTS SACOS/GRANEL V11 CHECK: PASS');
 console.log('REPORTS V11 SAFE GUARD CHECK: PASS');
+console.log('INJECTION DUPLICATION CHECK: PASS');
 console.log('NO HARDCODED REPORT SNAPSHOT CHECK: PASS');
 NODE
 
