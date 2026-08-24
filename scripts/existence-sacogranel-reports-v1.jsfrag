@@ -1,0 +1,71 @@
+function existenceReportParamConfig(){
+  const p=state.snapshot?.metrics?.counter?.parameters||{};
+  return {granelDetails:(Array.isArray(p.granelDetails)?p.granelDetails:[]).map(v=>String(v||'').trim().toUpperCase()),harina10:String(p.harina10||'HARINA 10 KG').trim().toUpperCase(),specialCustomer25:String(p.specialCustomer25||'').trim().toUpperCase(),bigBagHfm800:String(p.bigBagHfm800||'').trim().toUpperCase(),bigBagSemolina800:String(p.bigBagSemolina800||'').trim().toUpperCase(),code10A39:String(p.code10A39||'HFM10').trim().toUpperCase(),code10A24:String(p.code10A24||'GRITZGR10').trim().toUpperCase()};
+}
+function existenceReportRule(r){
+  const p=existenceReportParamConfig();
+  const code=String(r?.code||r?.codigo||'').trim().toUpperCase();
+  const product=String(r?.product||r?.producto||r?.name||r?.item||'').trim().toUpperCase();
+  const detail=String(r?.detail||r?.detalle||'').trim().toUpperCase();
+  const origin=String(r?.origin||r?.origenDestino||r?.cliente||r?.customer||'').trim().toUpperCase();
+  const classification=String(r?.classification||r?.clasificacion||r?.family||'').trim().toUpperCase();
+  const sg=String(r?.s_g||r?.sG||r?.sg||'').trim().toUpperCase();
+  const granelSet=new Set(p.granelDetails);
+  if(sg==='GRANEL'||classification.includes('GRANEL')||granelSet.has(detail))return {mode:'GRANEL',divisor:1,rule:'GRANEL · parámetro CODIGOS / clasificación S-G'};
+  if(product===p.harina10)return {mode:'SACOS',divisor:10,rule:'SACOS 10 KG · CODIGOS!I2'};
+  if(p.specialCustomer25&&origin===p.specialCustomer25)return {mode:'SACOS',divisor:25,rule:'SACOS 25 KG · excepción cliente CODIGOS!J11'};
+  if(p.bigBagHfm800&&detail===p.bigBagHfm800)return {mode:'SACOS',divisor:800,rule:'BIG BAG HFM 800 KG · CODIGOS!J12'};
+  if(p.bigBagSemolina800&&detail===p.bigBagSemolina800)return {mode:'SACOS',divisor:800,rule:'BIG BAG SEMOLINA 800 KG · CODIGOS!J13'};
+  if(code===p.code10A39||code===p.code10A24)return {mode:'SACOS',divisor:10,rule:'SACOS 10 KG · excepción CODIGOS!A24/A39'};
+  return {mode:'SACOS',divisor:25,rule:'SACOS 25 KG · regla general'};
+}
+function existenceReportRows(entry){
+  const base=entry?.existenceBase||state.existenceBaseRecords?.find(x=>x.key===entry?.key)||null;
+  const src=Array.isArray(base?.detailRows)?base.detailRows:[];
+  return src.filter(x=>x&&typeof x==='object').map(r=>{
+    const rule=existenceReportRule(r);
+    const kg=Number(r?.salida)||0;
+    const fx=typeof applyFixedMasterFormulaClient==='function'?applyFixedMasterFormulaClient(r):{AR:0,AQ:0};
+    const sacs=kg/rule.divisor;
+    const code=String(r?.code||r?.codigo||'').trim().toUpperCase();
+    const family=String(r?.family||REGISTRO_CODE_FAMILY_CLIENT?.[code]||'SIN FAMILIA').trim().toUpperCase();
+    const envase=String(r?.envase||r?.ENVASE||'').trim().toUpperCase();
+    const cliente=String(r?.cliente||r?.origin||r?.origenDestino||r?.customer||'').trim();
+    const doc=String(r?.docto||r?.tipoDocumento||'').trim();
+    return {...r,code,family,envase,cliente,doc,kg,sacos,neto:Number(fx.AR)||0,valorMovto:Number(fx.AQ)||0,mode:rule.mode,rule:rule.rule};
+  }).filter(r=>r.kg>0);
+}
+function groupExistenceReport(rows,keyFn){
+  const m=new Map();
+  for(const r of rows){const k=String(keyFn(r)||'SIN CLASIFICAR');const z=m.get(k)||{key:k,rows:0,kg:0,sacos:0,neto:0};z.rows++;z.kg+=r.kg;z.sacos+=r.mode==='SACOS'?r.sacos:0;z.neto+=r.neto;m.set(k,z)}
+  return [...m.values()].sort((a,b)=>b.kg-a.kg);
+}
+function existenceReportAll(entry){
+  const rows=existenceReportRows(entry),sacs=rows.filter(r=>r.mode==='SACOS'),granel=rows.filter(r=>r.mode==='GRANEL');
+  const nestle=sacs.filter(r=>/NESTLE/i.test(r.cliente)),nestleGranel=granel.filter(r=>/NESTLE/i.test(r.cliente));
+  const cpwGranel=granel.filter(r=>/CPW|CEREALES CPW/i.test(r.cliente)),nestleCpwGranel=granel.filter(r=>/NESTLE|CPW|CEREALES CPW/i.test(r.cliente));
+  const total=rs=>({rows:rs.length,kg:rs.reduce((a,x)=>a+x.kg,0),sacos:rs.reduce((a,x)=>a+(x.mode==='SACOS'?x.sacos:0),0),neto:rs.reduce((a,x)=>a+x.neto,0)});
+  return {rows,summary:{total:total(rows),sacos:total(sacs),granel:total(granel)},reports:{nestleSacos:{name:'NESTLE SACOS',data:total(nestle),families:groupExistenceReport(nestle,r=>r.family)},nestleYCPWGranel:{name:'NESTLE Y CPW GRANELES',data:total(nestleCpwGranel),families:groupExistenceReport(nestleCpwGranel,r=>r.family)},cpwGraneles:{name:'CPW GRANELES',data:total(cpwGranel),families:groupExistenceReport(cpwGranel,r=>r.family)},nestleGraneles:{name:'NESTLE GRANELES',data:total(nestleGranel),families:groupExistenceReport(nestleGranel,r=>r.family)},envase:{name:'ENVASE',data:groupExistenceReport(rows,r=>r.envase||r.mode)},familias:{name:'FAMILIAS INE',data:groupExistenceReport(rows,r=>r.family)},codigos:{name:'DETALLE POR CÓDIGO',data:groupExistenceReport(rows,r=>r.code)}},audit:{rows:rows.length,formulaRows:rows.length,formula:'AJ=IF(OR(N=Factura[FT],N=Guía[ST]),S,0); AM=IF(N=Boleta[BT],S," "); AN=IFERROR(VLOOKUP(AM,CODIGOS!R16:S111,2,0),0); AQ=AJ+AN; AR=AQ*U',sacksFormula:'VENTAS*SACOS: GRANEL→SALIDA; HARINA 10 KG→SALIDA/10; excepción cliente→SALIDA/25; BIG BAG→SALIDA/800; excepciones A24/A39→SALIDA/10; resto→SALIDA/25',unmapped:[...new Set(rows.filter(r=>!r.family||r.family==='SIN FAMILIA').map(r=>r.code))].filter(Boolean),formulaZero:rows.filter(r=>!r.neto).length}};
+}
+function renderExistenceReports(){
+  if(state.role!=='ADMIN')return renderDenied();
+  const records=loadExistenceRecords().slice().sort((a,b)=>String(a.key).localeCompare(String(b.key))),selected=records.find(x=>x.key===state.existenceSelected)||records[records.length-1]||null;
+  if(!selected){$('content').innerHTML='<div class="card"><div class="privateHero"><div><div class="privateEyebrow">🔒 ADMIN · INFORMES</div><h1>📊 Sacos y Graneles desde Registro</h1><p>Carga un Registro de Existencia para generar los informes con la fórmula universal del Maestro.</p></div><button class="primary" type="button" onclick="show(\'existencias\')">📦 Ir a Registros de existencia</button></div></div>';return;}
+  const report=existenceReportAll(selected),tabs=['summary','nestle','cpw','envase','family','audit'],tab=state.existenceReportTab||'summary';
+  const fmt=v=>Number(v||0).toLocaleString('es-CL',{maximumFractionDigits:2}),money2=v=>'$ '+Number(v||0).toLocaleString('es-CL',{maximumFractionDigits:0}),keyLabel=selected.periodo||selected.key||'',metrics=report.summary;
+  const cards='<div class="kpiGrid"><div class="kpi powerKpi"><small>KG TOTAL</small><b>'+fmt(metrics.total.kg)+'</b><span>Registro INFO=1</span></div><div class="kpi powerKpi"><small>KG SACOS</small><b>'+fmt(metrics.sacos.kg)+'</b><span>'+fmt(metrics.sacos.sacos)+' sacos</span></div><div class="kpi powerKpi"><small>KG GRANEL</small><b>'+fmt(metrics.granel.kg)+'</b><span>Salida física</span></div><div class="kpi powerKpi"><small>NETO INE</small><b>'+money2(metrics.total.neto)+'</b><span>Fórmula Maestro</span></div></div>';
+  const buttons='<div class="toolbar" style="margin:12px 0">'+tabs.map(t=>'<button class="'+(tab===t?'primary':'secondary')+'" type="button" data-er-tab="'+t+'">'+({summary:'Resumen',nestle:'Nestlé',cpw:'CPW',envase:'Envases',family:'Familias/Códigos',audit:'Auditoría'}[t])+'</button>').join('')+'</div>';
+  const rowsTable=(title,arr)=>'<div class="card"><div class="sectionTitle"><div><h3>'+title+'</h3></div><span class="pill">'+arr.length+' grupos</span></div><div class="tableWrap"><table class="table"><thead><tr><th>Grupo</th><th>Filas</th><th>KG</th><th>Sacos</th><th>Neto</th><th>Promedio</th></tr></thead><tbody>'+((arr.map(x=>'<tr><td><strong>'+esc(x.key)+'</strong></td><td>'+fmt(x.rows)+'</td><td>'+fmt(x.kg)+'</td><td>'+fmt(x.sacos)+'</td><td>'+money2(x.neto)+'</td><td>'+(x.kg?'$ '+Number(x.neto/x.kg).toLocaleString('es-CL',{maximumFractionDigits:4}):'N/D')+'</td></tr>').join(''))||'<tr><td colspan="6" class="empty">Sin datos.</td></tr>')+'</tbody></table></div></div>';
+  let body='';
+  if(tab==='summary')body=rowsTable('Sacos vs Granel',[{key:'SACOS',rows:metrics.sacos.rows,kg:metrics.sacos.kg,sacos:metrics.sacos.sacos,neto:metrics.sacos.neto},{key:'GRANEL',rows:metrics.granel.rows,kg:metrics.granel.kg,sacos:0,neto:metrics.granel.neto}])+'<div class="card"><div class="sectionTitle"><div><h3>Fórmula aplicada al Registro</h3><div class="note">El Registro de Existencia es la única fuente mensual. El Maestro aporta el perfil de parámetros; no se exige cargar el Maestro cada mes.</div></div></div><pre style="white-space:pre-wrap;background:#f8fafc;padding:14px;border-radius:10px">'+esc(report.audit.formula+'\n'+report.audit.sacksFormula)+'</pre></div>';
+  else if(tab==='nestle')body=rowsTable(report.reports.nestleSacos.name,report.reports.nestleSacos.families)+rowsTable(report.reports.nestleGraneles.name,report.reports.nestleGraneles.families)+rowsTable(report.reports.nestleYCPWGranel.name,report.reports.nestleYCPWGranel.families);
+  else if(tab==='cpw')body=rowsTable(report.reports.cpwGraneles.name,report.reports.cpwGraneles.families);
+  else if(tab==='envase')body=rowsTable(report.reports.envase.name,report.reports.envase.data);
+  else if(tab==='family')body=rowsTable(report.reports.familias.name,report.reports.familias.data)+rowsTable(report.reports.codigos.name,report.reports.codigos.data);
+  else body='<div class="card"><h3>Auditoría</h3><div class="infoGrid"><div class="info"><small>Filas procesadas</small><b>'+fmt(report.audit.rows)+'</b></div><div class="info"><small>Filas con NETO 0</small><b>'+fmt(report.audit.formulaZero)+'</b></div><div class="info"><small>Códigos sin familia</small><b>'+fmt(report.audit.unmapped.length)+'</b></div><div class="info"><small>Fuente</small><b>Registro INFO=1</b></div></div><div class="status info" style="margin-top:12px">'+esc(report.audit.formula)+'</div></div>';
+  $('content').innerHTML='<div class="privateHero"><div><div class="privateEyebrow">🔒 ADMIN · INFORMES SACOS / GRANELES</div><h1>📊 Informes desde Registro de Existencia</h1><p>'+esc(keyLabel)+' · La mensualidad se calcula únicamente desde INFO=1 del Registro y conserva los registros ya cargados.</p></div><div class="privateActions"><select id="erSelect">'+records.slice().reverse().map(m=>'<option value="'+esc(m.key)+'" '+(m.key===selected.key?'selected':'')+'>'+esc(m.periodo)+' · '+esc(m.fileName||'Registro')+'</option>').join('')+'</select><button class="secondary" type="button" id="erPrint">🖨️ Imprimir</button><button class="secondary" type="button" id="erCsv">⬇️ CSV</button></div></div>'+cards+buttons+body;
+  $('erSelect').onchange=e=>{state.existenceSelected=e.target.value;state.existenceReportTab='summary';renderExistenceReports()};
+  document.querySelectorAll('[data-er-tab]').forEach(b=>b.onclick=()=>{state.existenceReportTab=b.dataset.erTab;renderExistenceReports()});
+  $('erPrint').onclick=()=>{const w=window.open('','_blank');if(!w){alert('El navegador bloqueó la impresión.');return;}w.document.write('<html><head><meta charset="utf-8"><title>Informes Sacos y Graneles</title><style>body{font-family:Arial;padding:22px;color:#172033}h1{color:#123a78}table{width:100%;border-collapse:collapse;font-size:11px}th,td{border:1px solid #cbd5e1;padding:5px}th{background:#eef4fb}</style></head><body><h1>Molinos San Miguel LTDA · Informes Sacos y Graneles</h1><p>'+esc(keyLabel)+'</p><p>KG total: '+fmt(metrics.total.kg)+' · KG sacos: '+fmt(metrics.sacos.kg)+' · KG granel: '+fmt(metrics.granel.kg)+' · Sacos: '+fmt(metrics.sacos.sacos)+'</p>'+body+'</body></html>');w.document.close();setTimeout(()=>w.print(),200)};
+  $('erCsv').onclick=()=>{const rows=report.rows,head=['Periodo','Código','Cliente','Documento','Familia','Clase','KG','Sacos','Neto','Regla'],lines=rows.map(r=>[keyLabel,r.code,r.cliente,r.doc,r.family,r.mode,r.kg,r.sacos,r.neto,r.rule].map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(';')),a=document.createElement('a'),u=URL.createObjectURL(new Blob(['\ufeff'+[head.join(';')].concat(lines).join('\r\n')],{type:'text/csv;charset=utf-8'}));a.href=u;a.download='informes_sacos_graneles_'+selected.key+'.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1000)};
+}
