@@ -110,12 +110,15 @@ const marker1='<script src="/dispatch-controls-v12.js"></script>';
 const marker2='<script src="/reports-maestro-v11.js"></script>';
 const marker3='<script src="/reports-sacos-granel-professional-v1.js"></script>';
 if(!s.includes('</body></html>'))throw new Error('No se encontró cierre de index.html.');
+s=s.replace(new RegExp('<script src="/reports-sacos-granel-professional-v1\\.js"></script>\\s*','g'),'');
 s=s.replace('</body></html>',marker1+'\n'+marker2+'\n'+marker3+'\n</body></html>');
 fs.writeFileSync(p,s);
 const pub=fs.readFileSync(p,'utf8');
 if(!pub.includes(marker1)||!pub.includes(marker2)||!pub.includes(marker3))throw new Error('No se integraron los módulos finales.');
+if((pub.match(/reports-sacos-granel-professional-v1\.js/g)||[]).length!==1)throw new Error('El módulo profesional quedó duplicado.');
 if(pub.includes('ine-sacos-granel-automatico-v4.js'))throw new Error('No se debe publicar el renderer V4 legacy.');
 console.log('FINAL MODULE INDEX INTEGRATION: PASS');
+console.log('PROFESSIONAL REPORT SCRIPT UNIQUENESS: PASS');
 NODE
 
 cd "$ROOT"
