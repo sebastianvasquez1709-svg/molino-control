@@ -19,6 +19,7 @@ check_core(){
   node --check dispatch-controls-v12.js
   node --check reports-sacos-granel-professional-v1.js
   node --check clients-enhanced-v1.js
+  node --check dashboard-macro-enhanced-v1.js
 }
 
 check_fragment(){
@@ -63,6 +64,7 @@ const report=fs.readFileSync('reports-maestro-v11.js','utf8');
 const dispatch=fs.readFileSync('dispatch-controls-v12.js','utf8');
 const pro=fs.readFileSync('reports-sacos-granel-professional-v1.js','utf8');
 const clients=fs.readFileSync('clients-enhanced-v1.js','utf8');
+const macro=fs.readFileSync('dashboard-macro-enhanced-v1.js','utf8');
 const guides=fs.readFileSync('scripts/guides-renderer.jsfrag','utf8');
 const fast=fs.readFileSync('scripts/fast-docs-injection.jsfrag','utf8');
 const assert=(ok,msg)=>{if(!ok)throw new Error(msg)};
@@ -82,6 +84,7 @@ assert(!report.includes("toast?.('No hay filas para exportar.','warn')"),'Quedó
 assert(pro.includes('mcReportRoot')&&pro.includes('molino_sacos_granel_report_v3'),'Módulo profesional Sacos/Granel incompleto.');
 assert(clients.includes('window.renderClients=render'),'Módulo Clientes mejorado no expone render seguro.');
 assert(clients.includes('__LYRA_CLIENTS_V1__'),'Falta marcador de versión de Clientes.');
+assert(macro.includes('__LYRA_MACRO_V1__')&&macro.includes("page==='macro'"),'Módulo Panel Macro V1 incompleto.');
 assert(guides.includes('const csvCell=')&&guides.includes('const csvLine='),'Guías no usa helpers CSV seguros.');
 assert((app.match(/FAST DOCUMENT MODULES V1/g)||[]).length===1,'La inyección FAST DOCUMENTS quedó duplicada.');
 assert((app.match(/MolinoDispatchBridge/g)||[]).length===1,'El bridge de Despachos quedó duplicado.');
@@ -95,6 +98,7 @@ console.log('REPORTS SACOS/GRANEL V11 CHECK: PASS');
 console.log('REPORTS V11 SAFE GUARD CHECK: PASS');
 console.log('REPORTS PROFESSIONAL UI CHECK: PASS');
 console.log('CLIENTS ENHANCED V1 CHECK: PASS');
+console.log('MACRO ENHANCED V1 CHECK: PASS');
 console.log('INJECTION DUPLICATION CHECK: PASS');
 console.log('NO HARDCODED REPORT SNAPSHOT CHECK: PASS');
 NODE
@@ -116,19 +120,22 @@ if(!s.includes('</body></html>'))throw new Error('No se encontró cierre de inde
 const markers=[
   '<script src="app.js"></script>',
   '<script src="clients-enhanced-v1.js"></script>',
+  '<script src="dashboard-macro-enhanced-v1.js"></script>',
   '<script src="/dispatch-controls-v12.js"></script>',
   '<script src="/reports-maestro-v11.js"></script>',
   '<script src="/reports-sacos-granel-professional-v1.js"></script>'
 ];
 if(!s.includes(markers[0]))throw new Error('No se encontró app.js en index.html.');
-s=s.replace('</body></html>',markers[1]+'\n'+markers[2]+'\n'+markers[3]+'\n'+markers[4]+'\n</body></html>');
+s=s.replace('</body></html>',markers.slice(1).join('\n')+'\n</body></html>');
 fs.writeFileSync(p,s);
 const pub=fs.readFileSync(p,'utf8');
 for(const m of markers.slice(1)) if(!pub.includes(m))throw new Error('No se integró '+m);
 if((pub.match(/clients-enhanced-v1\.js/g)||[]).length!==1)throw new Error('El módulo Clientes quedó duplicado.');
+if((pub.match(/dashboard-macro-enhanced-v1\.js/g)||[]).length!==1)throw new Error('El módulo Macro quedó duplicado.');
 if((pub.match(/reports-sacos-granel-professional-v1\.js/g)||[]).length!==1)throw new Error('El módulo profesional quedó duplicado.');
 if(pub.includes('ine-sacos-granel-automatico-v4.js'))throw new Error('No se debe publicar el renderer V4 legacy.');
 console.log('FINAL MODULE INDEX INTEGRATION: PASS');
+console.log('MACRO SCRIPT UNIQUENESS: PASS');
 console.log('PROFESSIONAL REPORT SCRIPT UNIQUENESS: PASS');
 NODE
 
