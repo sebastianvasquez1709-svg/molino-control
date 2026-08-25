@@ -55,7 +55,15 @@
     const totalNeto=docs.reduce((s,d)=>s+Number(d?.neto||0),0);
     const totalIva=docs.reduce((s,d)=>s+Number(d?.iva||0),0);
     const total=docs.reduce((s,d)=>s+Number(d?.total||0),0);
-    const snap={source:'supabase',fileName:data.maestro?.file||'',lastLoaded:data.maestro?.updated_at?Date.parse(data.maestro.updated_at):Date.now(),sheets:Array.from({length:Number(data.maestro?.sheets||0)},(_,i)=>`Hoja ${i+1}`),metrics:{ine:{totalNeto:0,totalKg:0,totalPromedio:0,netoHarinas:0,kgHarinas:0,promedioHarinas:0,periodo:'',items:[]},sacos:{ventasSacos:0,kgSacos:0,items:[]},granel:{totalGranel:0,items:[]},iva:{neto:totalNeto,iva:totalIva,total,docs:docs.length}},documents:docs,clients:(data.clientes||[]).map(c=>({...c,key:c.id,nombre:c.razon_social||c.nombre_fantasia||c.rut||'Cliente'})),guides,nc,invoices,boletas,products:(data.productos||[]),dispatches:(data.despachos||[]).map(d=>({...d,cliente:d.cliente||'',rut:d.rut||'',producto:d.producto||'',kg:Number(d.kilos||0),sacos:Number(d.sacos||0)}))};
+    const docKilos=docs.reduce((s,d)=>s+Number(d?.datos?.kilos||0),0);
+    const docSacos=docs.reduce((s,d)=>s+Number(d?.datos?.sacos||0),0);
+    const docsAvg=docKilos?totalNeto/docKilos:0;
+    const totalKilosDispatch=(Array.isArray(data.despachos)?data.despachos:[]).reduce((s,d)=>s+Number(d?.kilos||0),0);
+    const totalSacosDispatch=(Array.isArray(data.despachos)?data.despachos:[]).reduce((s,d)=>s+Number(d?.sacos||0),0);
+    const granelDispatch=(Array.isArray(data.despachos)?data.despachos:[]).filter(d=>/GRANEL/i.test(String(d?.producto||'')));
+    const granelKilos=granelDispatch.reduce((s,d)=>s+Number(d?.kilos||0),0);
+    const granelItems=Object.values(granelDispatch.reduce((acc,d)=>{const name=String(d?.producto||'GRANEL').trim();const k=Number(d?.kilos||0);if(!acc[name])acc[name]={name,kg:0,rows:0};acc[name].kg+=k;acc[name].rows++;return acc;},{}));
+    const snap={source:'supabase',fileName:data.maestro?.file||'',lastLoaded:data.maestro?.updated_at?Date.parse(data.maestro.updated_at):Date.now(),sheets:Array.from({length:Number(data.maestro?.sheets||0)},(_,i)=>`Hoja ${i+1}`),metrics:{ine:{totalNeto:totalNeto,totalKg:docKilos,totalPromedio:docsAvg,netoHarinas:totalNeto,kgHarinas:docKilos,promedioHarinas:docsAvg,periodo:'Ventas Maestro actual',items:[]},sacos:{ventasSacos:docSacos,kgSacos:docKilos,items:[]},granel:{totalGranel:granelKilos,items:granelItems},iva:{neto:totalNeto,iva:totalIva,total,docs:docs.length}},documents:docs,clients:(data.clientes||[]).map(c=>({...c,key:c.id,nombre:c.razon_social||c.nombre_fantasia||c.rut||'Cliente'})),guides,nc,invoices,boletas,products:(data.productos||[]),dispatches:(data.despachos||[]).map(d=>({...d,cliente:d.cliente||'',rut:d.rut||'',producto:d.producto||'',kg:Number(d.kilos||0),sacos:Number(d.sacos||0)})),diagnostics:{documentKilos:docKilos,documentSacos:docSacos,dispatchKilos:totalKilosDispatch,dispatchSacos:totalSacosDispatch,granelDispatchKilos:granelKilos}};
     snapshotCache={data:snap,at:Date.now()};
     return snap;
   }
