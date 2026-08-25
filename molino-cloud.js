@@ -1,7 +1,7 @@
 /* Molino Control · Cloud Data Layer
  * Browser-safe Supabase client. Never contains service_role secrets.
- * Optimized for reuse: request coalescing, short-lived snapshot cache,
- * bounded timeouts and a single retry for transient network/RPC failures.
+ * Compatibility bridge: the current Molino login is validated by a protected
+ * database RPC until Supabase Auth users are provisioned.
  */
 (() => {
   'use strict';
@@ -14,6 +14,7 @@
   let clientPromise;
   let snapshotCache = null;
   let snapshotPromise = null;
+  let localSession = null;
 
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -52,25 +53,36 @@
   }
 
   async function getSession() {
-    const sb = await client();
-    const { data, error } = await withTimeout(sb.auth.getSession());
-    if (error) throw error;
-    return data.session;
+    return localSession;
   }
 
-  async function signIn(email, password) {
+  async function signIn(identifier, password) {
     const sb = await client();
-    const { data, error } = await withTimeout(sb.auth.signInWithPassword({ email, password }));
+    const { data, error } = await withTimeout(sb.rpc('molino_local_auth', {
+      p_rut: String(identifier || '').trim(),
+      p_pin: String(password || '')
+    }));
     if (error) throw error;
+    if (!data?.ok) throw new Error(data?.message || 'Credenciales inválidas.');
+    localSession = {
+      local: true,
+      user: {
+        id: data.id,
+        email: data.email,
+        rut: data.rut,
+        role: String(data.rol || 'operador').toUpperCase(),
+        nombre: data.nombre || data.email
+      }
+    };
+    localSession._identifier = String(identifier || '').trim();
+    localSession._password = String(password || '');
     clearCache();
-    return data;
+    return localSession;
   }
 
   async function signOut() {
-    const sb = await client();
-    const { error } = await withTimeout(sb.auth.signOut());
+    localSession = null;
     clearCache();
-    if (error) throw error;
   }
 
   async function health() {
@@ -83,31 +95,44 @@
   }
 
   async function fetchSnapshot() {
+    if (!localSession) throw new Error('Sesión no iniciada.');
     const sb = await client();
-    const { data, error } = await withTimeout(sb.rpc('molino_app_snapshot'));
-    if (!error) {
-      snapshotCache = { data, at: Date.now() };
-      return data;
-    }
-
-    // Compatibility fallback: the current database exposes maestro_public_health
-    // but not molino_app_snapshot. Keep the cloud layer usable instead of failing
-    // every caller when the optional aggregate RPC is absent.
-    const healthData = await withTimeout(sb.rpc('maestro_public_health'));
-    if (healthData.error) throw error;
-    const fallback = Object.freeze({
-      source: 'maestro_public_health',
-      health: healthData.data,
-      clients: [],
-      documents: [],
-      invoices: [],
-      guides: [],
-      boletas: [],
-      existence: [],
-      dispatches: []
-    });
-    snapshotCache = { data: fallback, at: Date.now() };
-    return fallback;
+    const { data, error } = await withTimeout(sb.rpc('molino_app_snapshot_local', {
+      p_rut: localSession._identifier,
+      p_pin: localSession._password
+    }));
+    if (error) throw error;
+    if (!data) throw new Error('Supabase no devolvió el Maestro.');
+    const docs = Array.isArray(data.documentos) ? data.documentos : [];
+    const invoices = docs.filter(d => /FACTURA/i.test(String(d?.tipo || '')));
+    const guides = docs.filter(d => /GU[IÍ]A/i.test(String(d?.tipo || '')));
+    const boletas = docs.filter(d => /BOLETA/i.test(String(d?.tipo || '')));
+    const nc = docs.filter(d => /NOTA DE CR[EÉ]DITO/i.test(String(d?.tipo || '')) || /NOTA DE D[EÉ]BITO/i.test(String(d?.tipo || '')));
+    const totalNeto = docs.reduce((s,d) => s + Number(d?.neto || 0), 0);
+    const totalIva = docs.reduce((s,d) => s + Number(d?.iva || 0), 0);
+    const total = docs.reduce((s,d) => s + Number(d?.total || 0), 0);
+    const snap = {
+      source: 'supabase',
+      fileName: data.maestro?.file || '',
+      lastLoaded: data.maestro?.updated_at ? Date.parse(data.maestro.updated_at) : Date.now(),
+      sheets: Array.from({length: Number(data.maestro?.sheets || 0)}, (_,i) => `Hoja ${i+1}`),
+      metrics: {
+        ine: { totalNeto: 0, totalKg: 0, totalPromedio: 0, netoHarinas: 0, kgHarinas: 0, promedioHarinas: 0, periodo: '', items: [] },
+        sacos: { ventasSacos: 0, kgSacos: 0, items: [] },
+        granel: { totalGranel: 0, items: [] },
+        iva: { neto: totalNeto, iva: totalIva, total, docs: docs.length }
+      },
+      documents: docs,
+      clients: (data.clientes || []).map(c => ({...c, key: c.id, nombre: c.razon_social || c.nombre_fantasia || c.rut || 'Cliente'})),
+      guides,
+      nc,
+      invoices,
+      boletas,
+      products: (data.productos || []).map(p => p.nombre || p.codigo || ''),
+      dispatches: (data.despachos || []).map(d => ({...d, cliente: d.cliente || '', rut: d.rut || '', producto: d.producto || '', kg: Number(d.kilos || 0), sacos: Number(d.sacos || 0)}))
+    };
+    snapshotCache = { data: snap, at: Date.now() };
+    return snap;
   }
 
   async function snapshot(options = {}) {
@@ -115,11 +140,8 @@
     const maxAgeMs = Number.isFinite(Number(options?.maxAgeMs)) ? Number(options.maxAgeMs) : SNAPSHOT_TTL_MS;
     const fresh = !force && snapshotCache && (Date.now() - snapshotCache.at) < maxAgeMs;
     if (fresh) return snapshotCache.data;
-
     if (!snapshotPromise || force) {
-      snapshotPromise = retryOnce(fetchSnapshot).finally(() => {
-        snapshotPromise = null;
-      });
+      snapshotPromise = retryOnce(fetchSnapshot).finally(() => { snapshotPromise = null; });
     }
     return await snapshotPromise;
   }
@@ -130,11 +152,7 @@
   }
 
   function cacheInfo() {
-    return Object.freeze({
-      cached: !!snapshotCache,
-      ageMs: snapshotCache ? Date.now() - snapshotCache.at : null,
-      ttlMs: SNAPSHOT_TTL_MS
-    });
+    return Object.freeze({ cached: !!snapshotCache, ageMs: snapshotCache ? Date.now() - snapshotCache.at : null, ttlMs: SNAPSHOT_TTL_MS });
   }
 
   async function list(table, options = {}) {
