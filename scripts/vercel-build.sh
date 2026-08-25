@@ -18,6 +18,7 @@ check_core(){
   node --check reports-maestro-v11.js
   node --check dispatch-controls-v12.js
   node --check reports-sacos-granel-professional-v1.js
+  node --check clients-enhanced-v1.js
 }
 
 check_fragment(){
@@ -61,6 +62,7 @@ const worker=fs.readFileSync('excel-worker.js','utf8');
 const report=fs.readFileSync('reports-maestro-v11.js','utf8');
 const dispatch=fs.readFileSync('dispatch-controls-v12.js','utf8');
 const pro=fs.readFileSync('reports-sacos-granel-professional-v1.js','utf8');
+const clients=fs.readFileSync('clients-enhanced-v1.js','utf8');
 const guides=fs.readFileSync('scripts/guides-renderer.jsfrag','utf8');
 const fast=fs.readFileSync('scripts/fast-docs-injection.jsfrag','utf8');
 const assert=(ok,msg)=>{if(!ok)throw new Error(msg)};
@@ -78,6 +80,8 @@ assert(report.includes('GRANEL AF = KG'),'Falta auditoría específica de granel
 assert(!report.includes('JULY_SNAPSHOT'),'El informe V11 no puede contener snapshots hardcodeados.');
 assert(!report.includes("toast?.('No hay filas para exportar.','warn')"),'Quedó una referencia toast no segura en Reportes V11.');
 assert(pro.includes('mcReportRoot')&&pro.includes('molino_sacos_granel_report_v3'),'Módulo profesional Sacos/Granel incompleto.');
+assert(clients.includes('window.renderClients=render'),'Módulo Clientes mejorado no expone render seguro.');
+assert(clients.includes('__LYRA_CLIENTS_V1__'),'Falta marcador de versión de Clientes.');
 assert(guides.includes('const csvCell=')&&guides.includes('const csvLine='),'Guías no usa helpers CSV seguros.');
 assert((app.match(/FAST DOCUMENT MODULES V1/g)||[]).length===1,'La inyección FAST DOCUMENTS quedó duplicada.');
 assert((app.match(/MolinoDispatchBridge/g)||[]).length===1,'El bridge de Despachos quedó duplicado.');
@@ -90,6 +94,7 @@ console.log('DISPATCH CONTROLS V12 CHECK: PASS');
 console.log('REPORTS SACOS/GRANEL V11 CHECK: PASS');
 console.log('REPORTS V11 SAFE GUARD CHECK: PASS');
 console.log('REPORTS PROFESSIONAL UI CHECK: PASS');
+console.log('CLIENTS ENHANCED V1 CHECK: PASS');
 console.log('INJECTION DUPLICATION CHECK: PASS');
 console.log('NO HARDCODED REPORT SNAPSHOT CHECK: PASS');
 NODE
@@ -106,15 +111,21 @@ let s=fs.readFileSync(p,'utf8');
 s=s.replace(/<script src="\/ine-sacos-granel-automatico-v4\.js"><\/script>\s*/g,'');
 s=s.replace(/<script src="\/dispatch-controls-v12\.js"><\/script>\s*/g,'');
 s=s.replace(/<script src="\/reports-maestro-v11\.js"><\/script>\s*/g,'');
-const marker1='<script src="/dispatch-controls-v12.js"></script>';
-const marker2='<script src="/reports-maestro-v11.js"></script>';
-const marker3='<script src="/reports-sacos-granel-professional-v1.js"></script>';
+s=s.replace(/<script src="\/reports-sacos-granel-professional-v1\.js"><\/script>\s*/g,'');
 if(!s.includes('</body></html>'))throw new Error('No se encontró cierre de index.html.');
-s=s.replace(new RegExp('<script src="/reports-sacos-granel-professional-v1\\.js"></script>\\s*','g'),'');
-s=s.replace('</body></html>',marker1+'\n'+marker2+'\n'+marker3+'\n</body></html>');
+const markers=[
+  '<script src="app.js"></script>',
+  '<script src="clients-enhanced-v1.js"></script>',
+  '<script src="/dispatch-controls-v12.js"></script>',
+  '<script src="/reports-maestro-v11.js"></script>',
+  '<script src="/reports-sacos-granel-professional-v1.js"></script>'
+];
+if(!s.includes(markers[0]))throw new Error('No se encontró app.js en index.html.');
+s=s.replace('</body></html>',markers[1]+'\n'+markers[2]+'\n'+markers[3]+'\n'+markers[4]+'\n</body></html>');
 fs.writeFileSync(p,s);
 const pub=fs.readFileSync(p,'utf8');
-if(!pub.includes(marker1)||!pub.includes(marker2)||!pub.includes(marker3))throw new Error('No se integraron los módulos finales.');
+for(const m of markers.slice(1)) if(!pub.includes(m))throw new Error('No se integró '+m);
+if((pub.match(/clients-enhanced-v1\.js/g)||[]).length!==1)throw new Error('El módulo Clientes quedó duplicado.');
 if((pub.match(/reports-sacos-granel-professional-v1\.js/g)||[]).length!==1)throw new Error('El módulo profesional quedó duplicado.');
 if(pub.includes('ine-sacos-granel-automatico-v4.js'))throw new Error('No se debe publicar el renderer V4 legacy.');
 console.log('FINAL MODULE INDEX INTEGRATION: PASS');
