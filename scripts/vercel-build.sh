@@ -48,6 +48,7 @@ run_patch scripts/patch-reports-cloud-v7.js
 run_patch scripts/patch-dispatch-bridge-v1.js
 run_patch scripts/patch-reports-v11-safe-v1.js
 run_patch scripts/patch-reports-professional-v1.js
+run_patch scripts/patch-lyra-report-qa-v1.js
 
 check_fragment 'counter worker' scripts/counter-worker-frag.js
 check_fragment 'existence reports' scripts/existence-sacogranel-reports-v1.jsfrag
@@ -78,6 +79,8 @@ assert(report.includes('GRANEL AF = KG'),'Falta auditoría específica de granel
 assert(!report.includes('JULY_SNAPSHOT'),'El informe V11 no puede contener snapshots hardcodeados.');
 assert(!report.includes("toast?.('No hay filas para exportar.','warn')"),'Quedó una referencia toast no segura en Reportes V11.');
 assert(pro.includes('mcReportRoot')&&pro.includes('molino_sacos_granel_report_v3'),'Módulo profesional Sacos/Granel incompleto.');
+assert(pro.includes('Auditoría de unidades y clasificación'),'LYRA no aplicó la corrección semántica del QA.');
+assert(!pro.includes('Control AF / KG granel'),'Persistió el QA incorrecto AF/KG universal.');
 assert(guides.includes('const csvCell=')&&guides.includes('const csvLine='),'Guías no usa helpers CSV seguros.');
 assert((app.match(/FAST DOCUMENT MODULES V1/g)||[]).length===1,'La inyección FAST DOCUMENTS quedó duplicada.');
 assert((app.match(/MolinoDispatchBridge/g)||[]).length===1,'El bridge de Despachos quedó duplicado.');
@@ -90,6 +93,7 @@ console.log('DISPATCH CONTROLS V12 CHECK: PASS');
 console.log('REPORTS SACOS/GRANEL V11 CHECK: PASS');
 console.log('REPORTS V11 SAFE GUARD CHECK: PASS');
 console.log('REPORTS PROFESSIONAL UI CHECK: PASS');
+console.log('LYRA REPORT QA SEMANTICS CHECK: PASS');
 console.log('INJECTION DUPLICATION CHECK: PASS');
 console.log('NO HARDCODED REPORT SNAPSHOT CHECK: PASS');
 NODE
