@@ -1,0 +1,41 @@
+name: Integrate safe LYRA experience
+
+on:
+  push:
+    branches: [lyra/validated-experience-2026-08-25]
+    paths:
+      - 'lyra-experience-safe-v1.js'
+      - '.github/workflows/integrate-lyra-safe.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Integrate safely into app shell
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const p='index.html';
+          let s=fs.readFileSync(p,'utf8');
+          const marker='<script src="/lyra-experience-safe-v1.js"></script>';
+          s=s.replace(/<script src="\/lyra-experience-safe-v1\.js"><\/script>\s*/g,'');
+          if(!s.includes('</body></html>')) throw new Error('No se encontró cierre de index.html');
+          s=s.replace('</body></html>',marker+'\n</body></html>');
+          fs.writeFileSync(p,s,'utf8');
+          const out=fs.readFileSync(p,'utf8');
+          if((out.match(/lyra-experience-safe-v1\.js/g)||[]).length!==1) throw new Error('LYRA safe quedó duplicado');
+          NODE
+      - name: Validate syntax
+        run: node --check scripts/vercel-build.sh
+      - name: Commit integration
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          if git diff --cached --quiet; then echo 'No integration changes.'; exit 0; fi
+          git commit -m 'build: integrate validated LYRA experience'
+          git push
