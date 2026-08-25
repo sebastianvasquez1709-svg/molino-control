@@ -19,13 +19,12 @@ jobs:
           APP=Path('app.js'); INDEX=Path('index.html')
           text=APP.read_text(encoding='utf-8')
           if '// CLOUD_BRIDGE_V1' not in text:
-              # Preserve the original IndexedDB reader under a dedicated name.
-              m=re.search(r'async function readSnapshot\(\)\{.*?\n\}(?=\nasync function audit)',text,re.S)
+              m=re.search(r'async function readSnapshot\(\)\{.*?\}(?=async function audit)',text,re.S)
               if not m: raise SystemExit('No se encontró readSnapshot')
               original=m.group(0)
               local_fn=original.replace('async function readSnapshot()','async function readSnapshotLocal()',1)
               text=text[:m.start()]+local_fn+'\n'+text[m.end():]
-              m=re.search(r'async function readSnapshotLocal\(\)\{.*?\n\}\nasync function audit',text,re.S)
+              m=re.search(r'async function readSnapshotLocal\(\)\{.*?\}(?=async function audit)',text,re.S)
               if not m: raise SystemExit('No se pudo conservar readSnapshotLocal')
               cloud_read="""async function readSnapshot(){
                 try{
@@ -35,8 +34,7 @@ jobs:
               }
               async function audit"""
               text=text[:m.start()]+cloud_read+text[m.end():]
-              # Replace login up to logout with the cloud-backed login.
-              m=re.search(r'async function login\(\)\{.*?\n\}function logout',text,re.S)
+              m=re.search(r'async function login\(\)\{.*?\}(?=function logout)',text,re.S)
               if not m: raise SystemExit('No se encontró login')
               login="""async function login(){
                 const rut=normalize($('userRut').value),pin=$('userPin').value;
@@ -55,16 +53,14 @@ jobs:
               }
               function logout"""
               text=text[:m.start()]+login+text[m.end():]
-              # Replace the existing logout body, keeping its public binding.
-              m=re.search(r'function logout\(\)\{.*?\n\}window\.logout',text,re.S)
+              m=re.search(r'function logout\(\)\{.*?\}(?=window\.logout)',text,re.S)
               if not m: raise SystemExit('No se encontró logout')
               logout="""function logout(){
                 Promise.resolve(MolinoCloud?.signOut?.()).catch(e=>console.warn(e));
                 state.user='';state.role='OPERADOR';state.snapshot=null;
                 $('app').classList.add('hidden');$('loginScreen').classList.remove('hidden');$('userPin').value='';
-              }window.logout"""
+              }"""
               text=text[:m.start()]+logout+text[m.end():]
-              # Local Excel persistence must verify against IndexedDB.
               text=text.replace('const check=await readSnapshot();if(!check||check.fileName!==snap.fileName)','const check=await readSnapshotLocal();if(!check||check.fileName!==snap.fileName)')
               text=text.replace('await saveSnapshot(legacy);return await readSnapshot()','await saveSnapshot(legacy);return await readSnapshotLocal()')
               text='// CLOUD_BRIDGE_V1\n'+text
