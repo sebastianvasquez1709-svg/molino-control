@@ -15,27 +15,26 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-          import re
           APP=Path('app.js'); INDEX=Path('index.html')
           text=APP.read_text(encoding='utf-8')
           if '// CLOUD_BRIDGE_V1' not in text:
-              m=re.search(r'async function readSnapshot\(\)\{.*?\}(?=async function audit)',text,re.S)
-              if not m: raise SystemExit('No se encontró readSnapshot')
-              original=m.group(0)
+              start=text.index('async function readSnapshot(){')
+              end=text.index('async function audit',start)
+              original=text[start:end]
               local_fn=original.replace('async function readSnapshot()','async function readSnapshotLocal()',1)
-              text=text[:m.start()]+local_fn+'\n'+text[m.end():]
-              m=re.search(r'async function readSnapshotLocal\(\)\{.*?\}(?=async function audit)',text,re.S)
-              if not m: raise SystemExit('No se pudo conservar readSnapshotLocal')
+              text=text[:start]+local_fn+text[end:]
+              start=text.index('async function readSnapshotLocal(){')
+              end=text.index('async function audit',start)
               cloud_read="""async function readSnapshot(){
                 try{
                   if(window.MolinoCloud && await MolinoCloud.getSession()) return await MolinoCloud.snapshot({force:true});
                 }catch(e){ console.warn('Cloud snapshot no disponible; usando almacenamiento local',e); }
                 return await readSnapshotLocal();
               }
-              async function audit"""
-              text=text[:m.start()]+cloud_read+text[m.end():]
-              m=re.search(r'async function login\(\)\{.*?\}(?=function logout)',text,re.S)
-              if not m: raise SystemExit('No se encontró login')
+              """
+              text=text[:start]+cloud_read+text[end:]
+              start=text.index('async function login(){')
+              end=text.index('function logout',start)
               login="""async function login(){
                 const rut=normalize($('userRut').value),pin=$('userPin').value;
                 $('loginError').classList.add('hidden');
@@ -51,16 +50,17 @@ jobs:
                   state.ineMonths=await readIneMonths();state.existenceRecords=await readExistenceRecords();state.existenceBaseRecords=await readExistenceBaseRecords();show('dashboard');
                 }catch(e){$('loginError').textContent=e?.message||'No fue posible conectar con Supabase.';$('loginError').classList.remove('hidden');}
               }
-              function logout"""
-              text=text[:m.start()]+login+text[m.end():]
-              m=re.search(r'function logout\(\)\{.*?\}(?=window\.logout)',text,re.S)
-              if not m: raise SystemExit('No se encontró logout')
+              """
+              text=text[:start]+login+text[end:]
+              start=text.index('function logout(){')
+              end=text.index('window.logout',start)
               logout="""function logout(){
                 Promise.resolve(MolinoCloud?.signOut?.()).catch(e=>console.warn(e));
                 state.user='';state.role='OPERADOR';state.snapshot=null;
                 $('app').classList.add('hidden');$('loginScreen').classList.remove('hidden');$('userPin').value='';
-              }"""
-              text=text[:m.start()]+logout+text[m.end():]
+              }
+              """
+              text=text[:start]+logout+text[end:]
               text=text.replace('const check=await readSnapshot();if(!check||check.fileName!==snap.fileName)','const check=await readSnapshotLocal();if(!check||check.fileName!==snap.fileName)')
               text=text.replace('await saveSnapshot(legacy);return await readSnapshot()','await saveSnapshot(legacy);return await readSnapshotLocal()')
               text='// CLOUD_BRIDGE_V1\n'+text
