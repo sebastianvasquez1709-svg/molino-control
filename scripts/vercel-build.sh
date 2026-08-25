@@ -8,7 +8,6 @@ BUILD_DIR="$(mktemp -d /tmp/molino-control-build.XXXXXX)"
 cleanup(){ rm -rf "$BUILD_DIR"; }
 trap cleanup EXIT INT TERM
 
-# Never patch the checked-out source directly. Work on an isolated build copy.
 tar --exclude='./.git' --exclude='./.vercel' --exclude='./node_modules' --exclude='./public' -cf - . | tar -xf - -C "$BUILD_DIR"
 cd "$BUILD_DIR"
 
@@ -18,6 +17,7 @@ check_core(){
   node --check ine-engine-maestro.js
   node --check reports-maestro-v11.js
   node --check dispatch-controls-v12.js
+  node --check reports-sacos-granel-professional-v1.js
 }
 
 check_fragment(){
@@ -36,7 +36,6 @@ run_patch(){
   check_core
 }
 
-# Apply the same production patches, but only inside the isolated build workspace.
 run_patch scripts/patch-cloud-persistence-v1.js
 run_patch scripts/patch-guides-professional-v1.js
 run_patch scripts/patch-fast-docs-v1.js
@@ -48,6 +47,7 @@ run_patch scripts/patch-formula-zero-rows-v1.js
 run_patch scripts/patch-reports-cloud-v7.js
 run_patch scripts/patch-dispatch-bridge-v1.js
 run_patch scripts/patch-reports-v11-safe-v1.js
+run_patch scripts/patch-reports-professional-v1.js
 
 check_fragment 'counter worker' scripts/counter-worker-frag.js
 check_fragment 'existence reports' scripts/existence-sacogranel-reports-v1.jsfrag
@@ -60,6 +60,7 @@ const app=fs.readFileSync('app.js','utf8');
 const worker=fs.readFileSync('excel-worker.js','utf8');
 const report=fs.readFileSync('reports-maestro-v11.js','utf8');
 const dispatch=fs.readFileSync('dispatch-controls-v12.js','utf8');
+const pro=fs.readFileSync('reports-sacos-granel-professional-v1.js','utf8');
 const guides=fs.readFileSync('scripts/guides-renderer.jsfrag','utf8');
 const fast=fs.readFileSync('scripts/fast-docs-injection.jsfrag','utf8');
 const assert=(ok,msg)=>{if(!ok)throw new Error(msg)};
@@ -76,6 +77,7 @@ assert(report.includes('molino_sacos_granel_report_v3'),'Falta RPC V11 de inform
 assert(report.includes('GRANEL AF = KG'),'Falta auditoría específica de granel.');
 assert(!report.includes('JULY_SNAPSHOT'),'El informe V11 no puede contener snapshots hardcodeados.');
 assert(!report.includes("toast?.('No hay filas para exportar.','warn')"),'Quedó una referencia toast no segura en Reportes V11.');
+assert(pro.includes('mcReportRoot')&&pro.includes('molino_sacos_granel_report_v3'),'Módulo profesional Sacos/Granel incompleto.');
 assert(guides.includes('const csvCell=')&&guides.includes('const csvLine='),'Guías no usa helpers CSV seguros.');
 assert((app.match(/FAST DOCUMENT MODULES V1/g)||[]).length===1,'La inyección FAST DOCUMENTS quedó duplicada.');
 assert((app.match(/MolinoDispatchBridge/g)||[]).length===1,'El bridge de Despachos quedó duplicado.');
@@ -87,6 +89,7 @@ console.log('GUIDES RENDERER STATIC CHECK: PASS');
 console.log('DISPATCH CONTROLS V12 CHECK: PASS');
 console.log('REPORTS SACOS/GRANEL V11 CHECK: PASS');
 console.log('REPORTS V11 SAFE GUARD CHECK: PASS');
+console.log('REPORTS PROFESSIONAL UI CHECK: PASS');
 console.log('INJECTION DUPLICATION CHECK: PASS');
 console.log('NO HARDCODED REPORT SNAPSHOT CHECK: PASS');
 NODE
@@ -105,11 +108,12 @@ s=s.replace(/<script src="\/dispatch-controls-v12\.js"><\/script>\s*/g,'');
 s=s.replace(/<script src="\/reports-maestro-v11\.js"><\/script>\s*/g,'');
 const marker1='<script src="/dispatch-controls-v12.js"></script>';
 const marker2='<script src="/reports-maestro-v11.js"></script>';
+const marker3='<script src="/reports-sacos-granel-professional-v1.js"></script>';
 if(!s.includes('</body></html>'))throw new Error('No se encontró cierre de index.html.');
-s=s.replace('</body></html>',marker1+'\n'+marker2+'\n</body></html>');
+s=s.replace('</body></html>',marker1+'\n'+marker2+'\n'+marker3+'\n</body></html>');
 fs.writeFileSync(p,s);
 const pub=fs.readFileSync(p,'utf8');
-if(!pub.includes(marker1)||!pub.includes(marker2))throw new Error('No se integraron los módulos finales.');
+if(!pub.includes(marker1)||!pub.includes(marker2)||!pub.includes(marker3))throw new Error('No se integraron los módulos finales.');
 if(pub.includes('ine-sacos-granel-automatico-v4.js'))throw new Error('No se debe publicar el renderer V4 legacy.');
 console.log('FINAL MODULE INDEX INTEGRATION: PASS');
 NODE
