@@ -18,6 +18,7 @@ check_core(){
   node --check reports-maestro-v11.js
   node --check dispatch-controls-v12.js
   node --check reports-sacos-granel-professional-v1.js
+  node --check lyra-experience-v1.js
 }
 
 check_fragment(){
@@ -49,6 +50,7 @@ run_patch scripts/patch-dispatch-bridge-v1.js
 run_patch scripts/patch-reports-v11-safe-v1.js
 run_patch scripts/patch-reports-professional-v1.js
 run_patch scripts/patch-lyra-report-qa-v1.js
+run_patch scripts/patch-lyra-experience-v1.js
 
 check_fragment 'counter worker' scripts/counter-worker-frag.js
 check_fragment 'existence reports' scripts/existence-sacogranel-reports-v1.jsfrag
@@ -62,6 +64,7 @@ const worker=fs.readFileSync('excel-worker.js','utf8');
 const report=fs.readFileSync('reports-maestro-v11.js','utf8');
 const dispatch=fs.readFileSync('dispatch-controls-v12.js','utf8');
 const pro=fs.readFileSync('reports-sacos-granel-professional-v1.js','utf8');
+const lyra=fs.readFileSync('lyra-experience-v1.js','utf8');
 const guides=fs.readFileSync('scripts/guides-renderer.jsfrag','utf8');
 const fast=fs.readFileSync('scripts/fast-docs-injection.jsfrag','utf8');
 const assert=(ok,msg)=>{if(!ok)throw new Error(msg)};
@@ -81,6 +84,7 @@ assert(!report.includes("toast?.('No hay filas para exportar.','warn')"),'Quedó
 assert(pro.includes('mcReportRoot')&&pro.includes('molino_sacos_granel_report_v3'),'Módulo profesional Sacos/Granel incompleto.');
 assert(pro.includes('Auditoría de unidades y clasificación'),'LYRA no aplicó la corrección semántica del QA.');
 assert(!pro.includes('Control AF / KG granel'),'Persistió el QA incorrecto AF/KG universal.');
+assert(lyra.includes('__LYRA_EXPERIENCE_V1__')&&lyra.includes('prefers-reduced-motion'),'Capa LYRA UX incompleta.');
 assert(guides.includes('const csvCell=')&&guides.includes('const csvLine='),'Guías no usa helpers CSV seguros.');
 assert((app.match(/FAST DOCUMENT MODULES V1/g)||[]).length===1,'La inyección FAST DOCUMENTS quedó duplicada.');
 assert((app.match(/MolinoDispatchBridge/g)||[]).length===1,'El bridge de Despachos quedó duplicado.');
@@ -94,6 +98,7 @@ console.log('REPORTS SACOS/GRANEL V11 CHECK: PASS');
 console.log('REPORTS V11 SAFE GUARD CHECK: PASS');
 console.log('REPORTS PROFESSIONAL UI CHECK: PASS');
 console.log('LYRA REPORT QA SEMANTICS CHECK: PASS');
+console.log('LYRA EXPERIENCE UX/PERFORMANCE CHECK: PASS');
 console.log('INJECTION DUPLICATION CHECK: PASS');
 console.log('NO HARDCODED REPORT SNAPSHOT CHECK: PASS');
 NODE
@@ -115,14 +120,18 @@ const marker2='<script src="/reports-maestro-v11.js"></script>';
 const marker3='<script src="/reports-sacos-granel-professional-v1.js"></script>';
 if(!s.includes('</body></html>'))throw new Error('No se encontró cierre de index.html.');
 s=s.replace(new RegExp('<script src="/reports-sacos-granel-professional-v1\\.js"></script>\\s*','g'),'');
-s=s.replace('</body></html>',marker1+'\n'+marker2+'\n'+marker3+'\n</body></html>');
+s=s.replace(new RegExp('<script src="/lyra-experience-v1\\.js"></script>\\s*','g'),'');
+const marker4='<script src="/lyra-experience-v1.js"></script>';
+s=s.replace('</body></html>',marker1+'\n'+marker2+'\n'+marker3+'\n'+marker4+'\n</body></html>');
 fs.writeFileSync(p,s);
 const pub=fs.readFileSync(p,'utf8');
-if(!pub.includes(marker1)||!pub.includes(marker2)||!pub.includes(marker3))throw new Error('No se integraron los módulos finales.');
+if(!pub.includes(marker1)||!pub.includes(marker2)||!pub.includes(marker3)||!pub.includes(marker4))throw new Error('No se integraron los módulos finales.');
 if((pub.match(/reports-sacos-granel-professional-v1\.js/g)||[]).length!==1)throw new Error('El módulo profesional quedó duplicado.');
+if((pub.match(/lyra-experience-v1\.js/g)||[]).length!==1)throw new Error('La capa LYRA Experience quedó duplicada.');
 if(pub.includes('ine-sacos-granel-automatico-v4.js'))throw new Error('No se debe publicar el renderer V4 legacy.');
 console.log('FINAL MODULE INDEX INTEGRATION: PASS');
 console.log('PROFESSIONAL REPORT SCRIPT UNIQUENESS: PASS');
+console.log('LYRA EXPERIENCE SCRIPT UNIQUENESS: PASS');
 NODE
 
 cd "$ROOT"
