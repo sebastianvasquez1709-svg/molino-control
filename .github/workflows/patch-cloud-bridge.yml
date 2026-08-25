@@ -11,129 +11,76 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Patch application
         shell: python
         run: |
           from pathlib import Path
           import re
-
-          APP = Path('app.js')
-          INDEX = Path('index.html')
-          text = APP.read_text(encoding='utf-8')
-
-          def find_function(src, name):
-              m = re.search(r'(?<![\w$])(?:async\s+)?function\s+' + re.escape(name) + r'\s*\([^)]*\)\s*\{', src)
-              if not m:
-                  raise SystemExit(f'No se encontró function {name}')
-              start = m.start()
-              brace = src.find('{', m.start())
-              depth = 0
-              quote = None
-              escape = False
-              line_comment = False
-              block_comment = False
-              i = brace
-              while i < len(src):
-                  c = src[i]
-                  n = src[i+1] if i + 1 < len(src) else ''
-                  if line_comment:
-                      if c == '\n': line_comment = False
-                  elif block_comment:
-                      if c == '*' and n == '/': block_comment = False; i += 1
-                  elif quote:
-                      if escape: escape = False
-                      elif c == '\\': escape = True
-                      elif c == quote: quote = None
-                  else:
-                      if c == '/' and n == '/': line_comment = True; i += 1
-                      elif c == '/' and n == '*': block_comment = True; i += 1
-                      elif c in "'\"`": quote = c
-                      elif c == '{': depth += 1
-                      elif c == '}':
-                          depth -= 1
-                          if depth == 0:
-                              return start, i + 1
-                  i += 1
-              raise SystemExit(f'No se pudo cerrar function {name}')
-
-          def replace_function(src, name, replacement):
-              a,b = find_function(src,name)
-              return src[:a] + replacement + src[b:]
-
-          # Keep the original IndexedDB reader available for Excel/local persistence.
-          a,b = find_function(text,'readSnapshot')
-          original = text[a:b]
-          if 'async function readSnapshotLocal' not in text:
-              local_fn = original.replace('async function readSnapshot(', 'async function readSnapshotLocal(', 1)
-              text = text[:a] + local_fn + text[b:]
-
-          cloud_read = '''async function readSnapshot(){
-            try{
-              if(window.MolinoCloud && await MolinoCloud.getSession()) return await MolinoCloud.snapshot({force:true});
-            }catch(e){ console.warn('Cloud snapshot no disponible; usando almacenamiento local',e); }
-            return await readSnapshotLocal();
-          }'''
-          text = replace_function(text,'readSnapshot',cloud_read)
-
-          login_fn = '''async function login(){
-            const rut=normalize($('userRut').value),pin=$('userPin').value;
-            $('loginError').classList.add('hidden');
-            if(!rut){$('loginError').textContent='Ingresa un RUT o usuario.';$('loginError').classList.remove('hidden');return;}
-            if(!pin){$('loginError').textContent='Ingresa tu clave.';$('loginError').classList.remove('hidden');return;}
-            try{
-              const session=await MolinoCloud.signIn(rut,pin);
-              state.user=session.user.rut||rut;
-              state.role=session.user.role||'OPERADOR';
-              try{$('rememberUser').checked?localStorage.setItem('molino_user',$('userRut').value.trim()):localStorage.removeItem('molino_user')}catch{}
-              $('loginScreen').classList.add('hidden');
-              $('app').classList.remove('hidden');
-              $('userLabel').textContent=state.user;
-              $('roleLabel').textContent=state.role;
-              buildNav();
-              state.snapshot=await MolinoCloud.snapshot({force:true});
-              applyClientContacts();
-              state.ineMonths=await readIneMonths();
-              state.existenceRecords=await readExistenceRecords();
-              state.existenceBaseRecords=await readExistenceBaseRecords();
-              show('dashboard');
-            }catch(e){
-              $('loginError').textContent=e?.message||'No fue posible conectar con Supabase.';
-              $('loginError').classList.remove('hidden');
-            }
-          }'''
-          text = replace_function(text,'login',login_fn)
-
-          logout_fn = '''async function logout(){
-            try{await MolinoCloud?.signOut?.()}catch(e){console.warn(e)}
-            state.user='';state.role='OPERADOR';state.snapshot=null;
-            $('app').classList.add('hidden');$('loginScreen').classList.remove('hidden');$('userPin').value='';
-          }'''
-          text = replace_function(text,'logout',logout_fn)
-
-          # Local Excel save/legacy restore must validate against IndexedDB, not the cloud snapshot.
-          text = text.replace('const check=await readSnapshot();if(!check||check.fileName!==snap.fileName)', 'const check=await readSnapshotLocal();if(!check||check.fileName!==snap.fileName)')
-          text = text.replace('await saveSnapshot(legacy);return await readSnapshot()', 'await saveSnapshot(legacy);return await readSnapshotLocal()')
-
-          marker='// CLOUD_BRIDGE_V1'
-          if marker not in text:
-              text = marker + '\n' + text
-          APP.write_text(text,encoding='utf-8')
-
+          APP=Path('app.js'); INDEX=Path('index.html')
+          text=APP.read_text(encoding='utf-8')
+          if '// CLOUD_BRIDGE_V1' not in text:
+              # Preserve the original IndexedDB reader under a dedicated name.
+              m=re.search(r'async function readSnapshot\(\)\{.*?\n\}(?=\nasync function audit)',text,re.S)
+              if not m: raise SystemExit('No se encontró readSnapshot')
+              original=m.group(0)
+              local_fn=original.replace('async function readSnapshot()','async function readSnapshotLocal()',1)
+              text=text[:m.start()]+local_fn+'\n'+text[m.end():]
+              m=re.search(r'async function readSnapshotLocal\(\)\{.*?\n\}\nasync function audit',text,re.S)
+              if not m: raise SystemExit('No se pudo conservar readSnapshotLocal')
+              cloud_read="""async function readSnapshot(){
+                try{
+                  if(window.MolinoCloud && await MolinoCloud.getSession()) return await MolinoCloud.snapshot({force:true});
+                }catch(e){ console.warn('Cloud snapshot no disponible; usando almacenamiento local',e); }
+                return await readSnapshotLocal();
+              }
+              async function audit"""
+              text=text[:m.start()]+cloud_read+text[m.end():]
+              # Replace login up to logout with the cloud-backed login.
+              m=re.search(r'async function login\(\)\{.*?\n\}function logout',text,re.S)
+              if not m: raise SystemExit('No se encontró login')
+              login="""async function login(){
+                const rut=normalize($('userRut').value),pin=$('userPin').value;
+                $('loginError').classList.add('hidden');
+                if(!rut){$('loginError').textContent='Ingresa un RUT o usuario.';$('loginError').classList.remove('hidden');return;}
+                if(!pin){$('loginError').textContent='Ingresa tu clave.';$('loginError').classList.remove('hidden');return;}
+                try{
+                  const session=await MolinoCloud.signIn(rut,pin);
+                  state.user=session.user.rut||rut; state.role=session.user.role||'OPERADOR';
+                  try{$('rememberUser').checked?localStorage.setItem('molino_user',$('userRut').value.trim()):localStorage.removeItem('molino_user')}catch{}
+                  $('loginScreen').classList.add('hidden');$('app').classList.remove('hidden');
+                  $('userLabel').textContent=state.user;$('roleLabel').textContent=state.role;buildNav();
+                  state.snapshot=await MolinoCloud.snapshot({force:true});applyClientContacts();
+                  state.ineMonths=await readIneMonths();state.existenceRecords=await readExistenceRecords();state.existenceBaseRecords=await readExistenceBaseRecords();show('dashboard');
+                }catch(e){$('loginError').textContent=e?.message||'No fue posible conectar con Supabase.';$('loginError').classList.remove('hidden');}
+              }
+              function logout"""
+              text=text[:m.start()]+login+text[m.end():]
+              # Replace the existing logout body, keeping its public binding.
+              m=re.search(r'function logout\(\)\{.*?\n\}window\.logout',text,re.S)
+              if not m: raise SystemExit('No se encontró logout')
+              logout="""function logout(){
+                Promise.resolve(MolinoCloud?.signOut?.()).catch(e=>console.warn(e));
+                state.user='';state.role='OPERADOR';state.snapshot=null;
+                $('app').classList.add('hidden');$('loginScreen').classList.remove('hidden');$('userPin').value='';
+              }window.logout"""
+              text=text[:m.start()]+logout+text[m.end():]
+              # Local Excel persistence must verify against IndexedDB.
+              text=text.replace('const check=await readSnapshot();if(!check||check.fileName!==snap.fileName)','const check=await readSnapshotLocal();if(!check||check.fileName!==snap.fileName)')
+              text=text.replace('await saveSnapshot(legacy);return await readSnapshot()','await saveSnapshot(legacy);return await readSnapshotLocal()')
+              text='// CLOUD_BRIDGE_V1\n'+text
+              APP.write_text(text,encoding='utf-8')
           html=INDEX.read_text(encoding='utf-8')
           if '/molino-cloud.js' not in html:
               html=html.replace('<script src="app.js"></script>','<script src="/molino-cloud.js"></script>\n<script src="app.js"></script>')
-          INDEX.write_text(html,encoding='utf-8')
-
+              INDEX.write_text(html,encoding='utf-8')
       - name: Validate JavaScript syntax
         run: |
           node --check app.js
           node --check molino-cloud.js
-
       - name: Commit patched application
         run: |
           git config user.name 'Molino Control Bot'
           git config user.email 'molino-control-bot@users.noreply.github.com'
-          git add app.js index.html .github/workflows/patch-cloud-bridge.yml
+          git add app.js index.html
           git commit -m 'chore: finalize Molino cloud bridge' || exit 0
           git push
