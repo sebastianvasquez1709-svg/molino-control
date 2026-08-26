@@ -1,0 +1,253 @@
+/* Molino Control · Unified Professional Theme V1
+ * Visual layer only. No business logic, data, navigation or API behavior changed.
+ * Reference: Panel Macro visual language — black/charcoal shell, gray surfaces, color accents.
+ */
+:root{
+  --mc-bg:#07090b;
+  --mc-bg-2:#0b0e11;
+  --mc-panel:#101316;
+  --mc-panel-2:#15191d;
+  --mc-panel-3:#1a1f24;
+  --mc-line:#292f35;
+  --mc-line-2:#353c44;
+  --mc-text:#f3f5f7;
+  --mc-text-2:#c4cbd2;
+  --mc-muted:#7f8993;
+  --mc-blue:#2780ff;
+  --mc-green:#28c76f;
+  --mc-purple:#9b6cff;
+  --mc-orange:#f3a400;
+  --mc-cyan:#19c7da;
+  --mc-red:#ef5350;
+}
+
+html,body{
+  background:var(--mc-bg)!important;
+  color:var(--mc-text)!important;
+}
+body{overflow-x:hidden}
+
+#app{background:linear-gradient(180deg,#060708 0%,#090c0f 100%)!important;min-height:100vh}
+.shell{background:transparent!important}
+
+/* Sidebar */
+.sidebar{
+  background:linear-gradient(180deg,#071018 0%,#0a0d11 46%,#07090b 100%)!important;
+  color:var(--mc-text)!important;
+  border-right:1px solid #242a30!important;
+  box-shadow:none!important;
+}
+.sideBrand{
+  border-bottom:1px solid #252b31!important;
+  padding-bottom:18px!important;
+}
+.sideBrand img{
+  background:#fff!important;
+  border:1px solid #dce3e9!important;
+  box-shadow:none!important;
+}
+.sideBrand strong{color:#fff!important;letter-spacing:-.2px}
+.sideBrand span{color:#9da7b0!important;opacity:1!important}
+.nav{gap:4px!important}
+.nav button{
+  background:transparent!important;
+  color:#cbd2d9!important;
+  border:1px solid transparent!important;
+  border-radius:9px!important;
+}
+.nav button:hover,
+.nav button.active{
+  color:#fff!important;
+  background:linear-gradient(90deg,#1a2026,#101419)!important;
+  border-color:#30373f!important;
+  box-shadow:inset 3px 0 #fff!important;
+}
+.logout{border-top:1px solid #22282e!important;margin-top:12px!important}
+.logout button{
+  background:#12171b!important;
+  color:#eef2f5!important;
+  border:1px solid #30373e!important;
+}
+.logout button:hover{background:#1a2025!important}
+
+/* Top bar */
+.topbar{
+  background:rgba(9,12,15,.96)!important;
+  color:var(--mc-text)!important;
+  border-bottom:1px solid #262c32!important;
+  box-shadow:none!important;
+}
+.topbar h2{color:#f5f7f9!important}
+.topbarBrand img{
+  background:#fff!important;
+  border:1px solid #dfe5ea!important;
+}
+.topbarBrand small,.userPill,.userPill strong,.userPill span{color:var(--mc-text-2)!important}
+.role{
+  background:#151b20!important;
+  color:#d3dae0!important;
+  border:1px solid #30373e!important;
+}
+
+/* Main working surface */
+.content{
+  max-width:1500px!important;
+  background:linear-gradient(180deg,#090c0f 0%,#0b0e11 100%)!important;
+  color:var(--mc-text)!important;
+}
+
+/* Generic cards / panels */
+.card,.kpi,.clientCard,.invoiceCard,.weatherCard,.info,.loadingBox,.drop,.empty{
+  background:linear-gradient(180deg,#121619,#0f1215)!important;
+  color:var(--mc-text)!important;
+  border-color:var(--mc-line)!important;
+  box-shadow:0 10px 28px rgba(0,0,0,.16)!important;
+}
+.card h3,.kpi h3,.clientCard h4,.invoiceCard h4{color:#f2f5f7!important}
+.kpi b,.metric strong,.clientHead h4,.strongCell{color:#fff!important}
+.metric small,.kpi small,.muted,.note,.searchStatus,.weatherMeta,.weatherSmall{color:var(--mc-muted)!important}
+.sectionTitle h3{color:#f4f6f8!important}
+
+/* Blue hero becomes executive charcoal, keeping semantics intact */
+.hero{
+  background:linear-gradient(135deg,#0b0e11 0%,#161b20 58%,#0b0e11 100%)!important;
+  border:1px solid #2b3239!important;
+  box-shadow:0 14px 36px rgba(0,0,0,.25)!important;
+}
+.hero p{color:#aeb7bf!important}
+
+/* Controls */
+button.primary{
+  background:linear-gradient(180deg,#2b84ff,#1f69d6)!important;
+  color:#fff!important;
+  border:1px solid #3a8cff!important;
+}
+button.secondary,.secondary{
+  background:#161b20!important;
+  color:#dbe1e6!important;
+  border:1px solid #30373f!important;
+}
+button.ghost,.ghost{
+  background:transparent!important;
+  color:#cfd6dc!important;
+  border:1px solid #394149!important;
+}
+button.danger,.danger{
+  background:#241213!important;
+  color:#ffb9b5!important;
+  border:1px solid #603032!important;
+}
+button:hover{filter:brightness(1.08)}
+
+input,select{
+  background:#0d1114!important;
+  color:#eef2f5!important;
+  border-color:#30373f!important;
+}
+input::placeholder{color:#707a84!important}
+input:focus,select:focus{
+  outline:3px solid rgba(39,128,255,.16)!important;
+  border-color:#2f80ff!important;
+}
+label{color:#cbd2d8!important}
+
+/* Toolbars / tags / statuses */
+.toolbar,.dataToolbar{color:var(--mc-text-2)!important}
+.pill,.sheetTag{
+  background:#151b20!important;
+  color:#cdd5dc!important;
+  border:1px solid #30373f!important;
+}
+.status.ok{background:#0f1c15!important;color:#a5e8bc!important;border:1px solid #28533a!important}
+.status.warn{background:#211a0e!important;color:#f4cd86!important;border:1px solid #5a461e!important}
+.status.err{background:#210f10!important;color:#ffb7b3!important;border:1px solid #5a2e31!important}
+.status.info{background:#0f1926!important;color:#9fc7ff!important;border:1px solid #27466c!important}
+
+/* Progress / loaders */
+.progress{background:#22282e!important}
+.progress>div{background:linear-gradient(90deg,#2780ff,#53a0ff)!important}
+.loadingOverlay{
+  background:rgba(3,5,7,.84)!important;
+  backdrop-filter:blur(5px)!important;
+}
+.loadingTitle{color:#fff!important}
+.testReport{color:#dce2e7!important;background:#0a0d10!important}
+
+/* Tables */
+.tableWrap{border-color:#2b3137!important;background:#0d1013!important}
+.table{background:#101316!important;color:#e8edf1!important}
+.table th{
+  background:#171c21!important;
+  color:#cbd2d9!important;
+  border-bottom-color:#30373e!important;
+}
+.table td{border-bottom-color:#242a30!important;color:#dce2e7!important}
+.table tbody tr:hover td{background:#151a1f!important}
+
+/* Search/autocomplete */
+.suggestions{
+  background:#101417!important;
+  border-color:#343b43!important;
+  box-shadow:0 18px 40px rgba(0,0,0,.35)!important;
+}
+.suggestion{border-top-color:#252b31!important;color:#d8dee3!important}
+.suggestion:hover{background:#181e23!important}
+.suggestion strong{color:#fff!important}
+.suggestion span{color:#87919a!important}
+
+/* Calendar / weather */
+.calendarDay,.weatherDay{
+  background:#12171b!important;
+  border-color:#2b3239!important;
+  color:#dce2e7!important;
+}
+.calendarDay:hover,.weatherDay:hover{background:#191f24!important}
+.weatherTemp{color:#fff!important}
+.weatherAlert.ok{background:#0f1c15!important;color:#a5e8bc!important;border-color:#28533a!important}
+.weatherAlert.warn{background:#211a0e!important;color:#f4cd86!important;border-color:#5a461e!important}
+.weatherAlert.bad{background:#210f10!important;color:#ffb7b3!important;border-color:#5a2e31!important}
+
+/* Dispatch / invoice form surfaces */
+.dispatchItems,.invoiceModule{color:var(--mc-text)!important}
+.invoiceResultsHeader{color:#dfe5ea!important}
+.invoiceTable th{background:#171c21!important;color:#ccd4da!important}
+.printBtn{background:#161b20!important;color:#dce2e7!important;border:1px solid #30373f!important}
+
+/* Health / diagnostics */
+.healthItem{background:#11161a!important;border-color:#2a3137!important;color:#dfe5e9!important}
+.healthItem.ok{background:#0f1c15!important;border-color:#28533a!important;color:#a5e8bc!important}
+.healthItem.bad{background:#210f10!important;border-color:#5a2e31!important;color:#ffb7b3!important}
+.healthItem span{color:#8a949d!important}
+
+/* Login uses the same corporate visual system; existing behavior untouched */
+#loginScreen{
+  background:radial-gradient(circle at 30% 10%,#17202a 0%,#0b0f13 40%,#050607 100%)!important;
+}
+.loginCard{
+  background:linear-gradient(180deg,#12171b,#0d1114)!important;
+  border-color:#2b3239!important;
+  box-shadow:0 24px 70px rgba(0,0,0,.45)!important;
+}
+.brand h1{color:#fff!important}
+.brand small{color:#8d98a2!important}
+.badge{background:#211a0e!important;color:#f4cd86!important;border-color:#5a461e!important}
+.hint{color:#7f8993!important}
+.error{background:#210f10!important;color:#ffb7b3!important;border-color:#5a2e31!important}
+
+/* Preserve the original logo exactly; do not apply filters or color transforms. */
+.sideBrand img,.topbarBrand img,.brand img,.printHeader img{filter:none!important}
+
+/* Accessibility / polish */
+button,input,select,.card,.kpi,.clientCard,.invoiceCard,.weatherCard,.info,.tableWrap{transition:background-color .15s ease,border-color .15s ease,box-shadow .15s ease,filter .15s ease}
+
+/* Do not contaminate printed documents with the application dark theme. */
+@media print{
+  html,body,#app{background:#fff!important;color:#111!important}
+  .sidebar,.topbar,.content{background:transparent!important;color:#111!important;box-shadow:none!important}
+  .printArea{background:#fff!important;color:#111!important}
+}
+
+@media(max-width:820px){
+  .content{padding:14px!important}
+  .sidebar{border-right:0!important;border-bottom:1px solid #242a30!important}
+}
