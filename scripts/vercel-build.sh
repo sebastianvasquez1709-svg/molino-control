@@ -22,6 +22,7 @@ check_core(){
   node --check dashboard-macro-enhanced-v1.js
   node --check panel-macro-pro-v3.js
   node --check panel-macro-pro-v4.js
+  node --check panel-macro-pro-v5.js
 }
 
 check_fragment(){
@@ -69,6 +70,7 @@ const pro=fs.readFileSync('reports-sacos-granel-professional-v1.js','utf8');
 const clients=fs.readFileSync('clients-enhanced-v1.js','utf8');
 const macro=fs.readFileSync('dashboard-macro-enhanced-v1.js','utf8');
 const macroV4=fs.readFileSync('panel-macro-pro-v4.js','utf8');
+const macroV5=fs.readFileSync('panel-macro-pro-v5.js','utf8');
 const guides=fs.readFileSync('scripts/guides-renderer.jsfrag','utf8');
 const fast=fs.readFileSync('scripts/fast-docs-injection.jsfrag','utf8');
 const assert=(ok,msg)=>{if(!ok)throw new Error(msg)};
@@ -90,6 +92,7 @@ assert(clients.includes('window.renderClients=render'),'Módulo Clientes mejorad
 assert(clients.includes('__LYRA_CLIENTS_V1__'),'Falta marcador de versión de Clientes.');
 assert(macro.includes('__LYRA_MACRO_V1__')&&macro.includes("page==='macro'"),'Módulo Panel Macro V1 incompleto.');
 assert(macroV4.includes('__MC_MACRO_PRO_V4__'),'Renderer Macro V4 incompleto.');
+assert(macroV5.includes('__MC_MACRO_PRO_V5__'),'Renderer Macro V5 incompleto.');
 assert(app.includes('MC_APP_STATE_BRIDGE_V1'),'Falta puente de estado de la app.');
 assert(guides.includes('const csvCell=')&&guides.includes('const csvLine='),'Guías no usa helpers CSV seguros.');
 assert((app.match(/FAST DOCUMENT MODULES V1/g)||[]).length===1,'La inyección FAST DOCUMENTS quedó duplicada.');
@@ -106,6 +109,7 @@ console.log('REPORTS PROFESSIONAL UI CHECK: PASS');
 console.log('CLIENTS ENHANCED V1 CHECK: PASS');
 console.log('MACRO ENHANCED V1 CHECK: PASS');
 console.log('MACRO V4 CHECK: PASS');
+console.log('MACRO V5 CHECK: PASS');
 console.log('APP STATE BRIDGE CHECK: PASS');
 console.log('INJECTION DUPLICATION CHECK: PASS');
 console.log('NO HARDCODED REPORT SNAPSHOT CHECK: PASS');
@@ -125,14 +129,7 @@ s=s.replace(/<script src="\/dispatch-controls-v12\.js"><\/script>\s*/g,'');
 s=s.replace(/<script src="\/reports-maestro-v11\.js"><\/script>\s*/g,'');
 s=s.replace(/<script src="\/reports-sacos-granel-professional-v1\.js"><\/script>\s*/g,'');
 if(!s.includes('</body></html>'))throw new Error('No se encontró cierre de index.html.');
-const markers=[
-  '<script src="app.js"></script>',
-  '<script src="clients-enhanced-v1.js"></script>',
-  '<script src="dashboard-macro-enhanced-v1.js"></script>',
-  '<script src="/dispatch-controls-v12.js"></script>',
-  '<script src="/reports-maestro-v11.js"></script>',
-  '<script src="/reports-sacos-granel-professional-v1.js"></script>'
-];
+const markers=['<script src="app.js"></script>','<script src="clients-enhanced-v1.js"></script>','<script src="dashboard-macro-enhanced-v1.js"></script>','<script src="/dispatch-controls-v12.js"></script>','<script src="/reports-maestro-v11.js"></script>','<script src="/reports-sacos-granel-professional-v1.js"></script>'];
 if(!s.includes(markers[0]))throw new Error('No se encontró app.js en index.html.');
 s=s.replace('</body></html>',markers.slice(1).join('\n')+'\n</body></html>');
 fs.writeFileSync(p,s);
