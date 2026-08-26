@@ -4,8 +4,9 @@
  */
 (() => {
   'use strict';
-  const VERSION='7.0.0';
+  const VERSION='7.0.1';
   const __LYRA_MACRO_V1__=true;
+  // Compatibility contract: page==='macro'
   if(window.__MC_MACRO_PRO_LOADER__)return;
   window.__MC_MACRO_PRO_LOADER__=VERSION;
 
