@@ -20,6 +20,8 @@ check_core(){
   node --check reports-sacos-granel-professional-v1.js
   node --check clients-enhanced-v1.js
   node --check dashboard-macro-enhanced-v1.js
+  node --check panel-macro-pro-v3.js
+  node --check panel-macro-pro-v4.js
 }
 
 check_fragment(){
@@ -50,6 +52,7 @@ run_patch scripts/patch-reports-cloud-v7.js
 run_patch scripts/patch-dispatch-bridge-v1.js
 run_patch scripts/patch-reports-v11-safe-v1.js
 run_patch scripts/patch-reports-professional-v1.js
+run_patch scripts/patch-macro-state-bridge-v1.js
 
 check_fragment 'counter worker' scripts/counter-worker-frag.js
 check_fragment 'existence reports' scripts/existence-sacogranel-reports-v1.jsfrag
@@ -65,6 +68,7 @@ const dispatch=fs.readFileSync('dispatch-controls-v12.js','utf8');
 const pro=fs.readFileSync('reports-sacos-granel-professional-v1.js','utf8');
 const clients=fs.readFileSync('clients-enhanced-v1.js','utf8');
 const macro=fs.readFileSync('dashboard-macro-enhanced-v1.js','utf8');
+const macroV4=fs.readFileSync('panel-macro-pro-v4.js','utf8');
 const guides=fs.readFileSync('scripts/guides-renderer.jsfrag','utf8');
 const fast=fs.readFileSync('scripts/fast-docs-injection.jsfrag','utf8');
 const assert=(ok,msg)=>{if(!ok)throw new Error(msg)};
@@ -85,6 +89,8 @@ assert(pro.includes('mcReportRoot')&&pro.includes('molino_sacos_granel_report_v3
 assert(clients.includes('window.renderClients=render'),'Módulo Clientes mejorado no expone render seguro.');
 assert(clients.includes('__LYRA_CLIENTS_V1__'),'Falta marcador de versión de Clientes.');
 assert(macro.includes('__LYRA_MACRO_V1__')&&macro.includes("page==='macro'"),'Módulo Panel Macro V1 incompleto.');
+assert(macroV4.includes('__MC_MACRO_PRO_V4__'),'Renderer Macro V4 incompleto.');
+assert(app.includes('MC_APP_STATE_BRIDGE_V1'),'Falta puente de estado de la app.');
 assert(guides.includes('const csvCell=')&&guides.includes('const csvLine='),'Guías no usa helpers CSV seguros.');
 assert((app.match(/FAST DOCUMENT MODULES V1/g)||[]).length===1,'La inyección FAST DOCUMENTS quedó duplicada.');
 assert((app.match(/MolinoDispatchBridge/g)||[]).length===1,'El bridge de Despachos quedó duplicado.');
@@ -99,6 +105,8 @@ console.log('REPORTS V11 SAFE GUARD CHECK: PASS');
 console.log('REPORTS PROFESSIONAL UI CHECK: PASS');
 console.log('CLIENTS ENHANCED V1 CHECK: PASS');
 console.log('MACRO ENHANCED V1 CHECK: PASS');
+console.log('MACRO V4 CHECK: PASS');
+console.log('APP STATE BRIDGE CHECK: PASS');
 console.log('INJECTION DUPLICATION CHECK: PASS');
 console.log('NO HARDCODED REPORT SNAPSHOT CHECK: PASS');
 NODE
