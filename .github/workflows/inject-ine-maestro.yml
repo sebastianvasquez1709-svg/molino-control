@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
     paths:
-      - '.github/workflows/inject-ine-maestro.yml'
       - 'ine-engine-maestro.js'
       - 'ine-maestro-static.json'
       - 'scripts/inject-ine-maestro.js'
@@ -16,8 +15,6 @@ on:
       - 'scripts/patch-dispatch-ux-v4.js'
       - 'scripts/harden-runtime.js'
       - 'scripts/smoke-integrity.js'
-      - 'index.html'
-      - 'app.js'
   workflow_dispatch:
 
 permissions:
@@ -84,28 +81,29 @@ console.log('DISPATCH UX V4 CHECK: PASS');
 NODE
 
       - name: Validate dispatch print source
-        run: node - <<'NODE'
-const fs = require('fs');
-const app = fs.readFileSync('app.js','utf8');
-const required = [
-  'function makePrintHtml(rows,from,to,logo){',
-  'table-layout:fixed',
-  'overflow-wrap:anywhere',
-  '<colgroup>',
-  'REPARTOS / PLANILLA DE DESPACHOS',
-  '// DISPATCH_PRINT_V2_STATE_SAFE',
-  '// DISPATCH_PRINT_V3_CHROME_SAFE',
-  'window.printDispatchPlan=()=>{',
-  "document.createElement('iframe')",
-  'frame.srcdoc=html',
-  "frame.setAttribute('sandbox','allow-modals allow-same-origin')",
-  "frame.setAttribute('allow','modals')"
-];
-for (const marker of required) if (!app.includes(marker)) throw new Error('Falta marcador de impresión: '+marker);
-if (/class=\\\\"num\\\\"/.test(app)) throw new Error('Persisten escapes de comillas defectuosos en la impresión.');
-if (/window\.printDispatchPlan[\s\S]{0,5000}location\.reload\(\)/.test(app)) throw new Error('El flujo de impresión aún puede recargar la aplicación.');
-console.log('DISPATCH PRINT V3 CHECK: PASS');
-NODE
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const app = fs.readFileSync('app.js','utf8');
+          const required = [
+            'function makePrintHtml(rows,from,to,logo){',
+            'table-layout:fixed',
+            'overflow-wrap:anywhere',
+            '<colgroup>',
+            'REPARTOS / PLANILLA DE DESPACHOS',
+            '// DISPATCH_PRINT_V2_STATE_SAFE',
+            '// DISPATCH_PRINT_V3_CHROME_SAFE',
+            'window.printDispatchPlan=()=>{',
+            "document.createElement('iframe')",
+            'frame.srcdoc=html',
+            "frame.setAttribute('sandbox','allow-modals allow-same-origin')",
+            "frame.setAttribute('allow','modals')"
+          ];
+          for (const marker of required) if (!app.includes(marker)) throw new Error('Falta marcador de impresión: '+marker);
+          if (/class=\\\\"num\\\\"/.test(app)) throw new Error('Persisten escapes de comillas defectuosos en la impresión.');
+          if (/window\.printDispatchPlan[\s\S]{0,5000}location\.reload\(\)/.test(app)) throw new Error('El flujo de impresión aún puede recargar la aplicación.');
+          console.log('DISPATCH PRINT V3 CHECK: PASS');
+          NODE
 
       - name: Patch app shell
         run: node scripts/inject-ine-maestro.js
