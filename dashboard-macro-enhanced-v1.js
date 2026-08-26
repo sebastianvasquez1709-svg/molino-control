@@ -4,7 +4,8 @@
  */
 (() => {
   'use strict';
-  const VERSION = '3.0.0';
+  const VERSION = '3.0.1';
+  const __LYRA_MACRO_V1__ = true;
   if (window.__MC_MACRO_PRO_LOADER__) return;
   window.__MC_MACRO_PRO_LOADER__ = VERSION;
   const load = () => {
