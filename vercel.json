@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "node scripts/patch-worker-index-v1.js && sh scripts/vercel-build.sh",
+  "buildCommand": "node scripts/patch-worker-index-v1.js && sh scripts/vercel-build-v2.sh",
   "outputDirectory": "public",
   "rewrites": [
     { "source": "/", "destination": "/index-auto.html" },
