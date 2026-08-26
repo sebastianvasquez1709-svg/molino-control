@@ -4,9 +4,8 @@
  */
 (() => {
   'use strict';
-  const VERSION='6.0.0';
+  const VERSION='7.0.0';
   const __LYRA_MACRO_V1__=true;
-  // Compatibility contract: page==='macro'
   if(window.__MC_MACRO_PRO_LOADER__)return;
   window.__MC_MACRO_PRO_LOADER__=VERSION;
 
@@ -19,13 +18,13 @@
     document.head.appendChild(l);
   };
   const loadMacro=()=>{
-    if(window.__MC_MACRO_PRO_V3__)return;
-    if(document.querySelector('script[data-mc-macro-pro-v3]'))return;
+    if(window.__MC_MACRO_PRO_V4__)return;
+    if(document.querySelector('script[data-mc-macro-pro-v4]'))return;
     const s=document.createElement('script');
-    s.src='panel-macro-pro-v3.js';
+    s.src='panel-macro-pro-v4.js';
     s.async=false;
-    s.dataset.mcMacroProV3='true';
-    s.onerror=()=>console.error('[Molino Control] No se pudo cargar Panel Macro PRO V3.');
+    s.dataset.mcMacroProV4='true';
+    s.onerror=()=>console.error('[Molino Control] No se pudo cargar Panel Macro PRO V4.');
     document.head.appendChild(s);
   };
   const boot=()=>{loadTheme();loadMacro();};
