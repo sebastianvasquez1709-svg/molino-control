@@ -1,10 +1,21 @@
 #!/bin/sh
 set -eu
 node scripts/patch-worker-index-v1.js
-sh scripts/vercel-build-v2.sh
 node scripts/patch-maestro-storage-hardening-v1.js
+sh scripts/vercel-build-v2.sh
 node scripts/patch-public-existence-master-ine-v2.js
 node scripts/patch-public-existence-master-ine-v3.js
 node scripts/patch-public-existence-master-ine-v4.js
 node --check public/app.js
-echo '=== MOLINO CONTROL · BUILD V5 · MAESTRO STORAGE HARDENED ==='
+node - <<'NODE'
+const fs=require('fs');
+const p=fs.readFileSync('public/app.js','utf8');
+const assert=(ok,msg)=>{if(!ok)throw new Error(msg)};
+assert(p.includes('MAESTRO_STORAGE_HARDENING_V1'),'MAESTRO hardening no llegó al artefacto público.');
+assert(p.includes('ROOT_SNAPSHOT_STORAGE_V1'),'Falta almacenamiento raíz del Maestro.');
+assert(!p.includes("const ADMIN_RUT='184467267',ACCESS_KEY='1234'"),'Persisten credenciales legacy en el bundle público.');
+assert(p.includes('El Maestro que estaba activo no fue sustituido'),'Falta protección del Maestro anterior ante fallo de carga.');
+console.log('PUBLIC MAESTRO HARDENING CHECK: PASS');
+console.log('NO LEGACY PUBLIC CREDENTIALS CHECK: PASS');
+NODE
+echo '=== MOLINO CONTROL · BUILD V6 · MAESTRO STORAGE HARDENED ==='
