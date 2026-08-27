@@ -15,9 +15,18 @@ async function cloudReplaceDispatches(rows){try{if(!await cloudAdminSession())re
 async function cloudLoadExistence(){try{if(!await cloudAdminSession())return null;const rows=await cloudRpc('app_existence_list');return (rows||[]).map(r=>({...((r&&r.payload)||{}),key:r.key,periodo:r.periodo||r?.payload?.periodo}))}catch(e){console.warn('Cloud existence unavailable',e);return null}}
 async function cloudReplaceExistence(rows){try{if(!await cloudAdminSession())return;for(const row of (Array.isArray(rows)?rows:[])){await cloudRpc('app_existence_upsert',{p_key:String(row.key),p_periodo:String(row.periodo||row.key||''),p_payload:row})}}catch(e){console.warn('Cloud existence save unavailable',e)}}
 async function hydrateCloudData(){
+  // Hydration is strictly read-only. It may refresh local caches, but it never
+  // writes the fetched cloud state back to Supabase during application boot.
   const contacts=await cloudLoadContacts(); if(contacts) applyClientContacts();
-  const dispatches=await cloudLoadDispatches(); if(Array.isArray(dispatches)){state.dispatchPlan=dispatches.map(normalizeDispatchItem);saveDispatchPlans()}
-  const existence=await cloudLoadExistence(); if(Array.isArray(existence)&&existence.length){state.existenceRecords=existence;for(const row of existence){const base=normalizeExistenceBase(row);if(base)await persistExistenceBaseRecord(base)}state.existenceBaseRecords=await readExistenceBaseRecords()}
+  const dispatches=await cloudLoadDispatches(); if(Array.isArray(dispatches)){
+    state.dispatchPlan=dispatches.map(normalizeDispatchItem);
+    try{localStorage.setItem('molino_dispatch_plan_v1',JSON.stringify(state.dispatchPlan))}catch{}
+  }
+  const existence=await cloudLoadExistence(); if(Array.isArray(existence)&&existence.length){
+    state.existenceRecords=existence;
+    for(const row of existence){const base=normalizeExistenceBase(row);if(base)await persistExistenceBaseRecord(base)}
+    state.existenceBaseRecords=await readExistenceBaseRecords()
+  }
 }
 `;
 if(!app.includes('CLOUD PERSISTENCE: Supabase is the durable source')) app=app.replace(marker,marker+bridge);
@@ -47,7 +56,7 @@ const persistNew=`async function persistExistenceRecords(rows){
   const clean=(Array.isArray(rows)?rows:[]).filter(x=>x&&x.key);
   state.existenceRecords=clean;
   try{localStorage.setItem(EXISTENCE_DB,JSON.stringify(clean.map(x=>({...x,detailRows:undefined,existenceBase:undefined}))));}catch{}
-  let db;try{db=await idb();await new Promise((resolve,reject)=>{const tx=db.transaction(STORE_EXISTENCE,'readwrite');const os=tx.objectStore(STORE_EXISTENCE);os.clear();for(const row of clean)os.put(row);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('No se pudo guardar Registros de Existencia'))});}catch(e){console.warn('No fue posible persistir Registros de Existencia',e)}finally{try{db?.close()}catch{}}
+  let db;try{db=await idb();await new Promise((resolve,reject)=>{const tx=db.transaction(STORE_EXISTENCE,'readwrite');const os=tx.objectStore(STORE_EXISTENCE);os.clear();for(const row of clean)os.put(row);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error('No se pudo guardar Registros de Existencia'))});}catch(e){console.warn('No fue posible persistir Registros de Existencia en IndexedDB',e)}finally{try{db?.close()}catch{}}
   await cloudReplaceExistence(clean);
   return clean;
 }`;
@@ -56,12 +65,4 @@ const bootNeed="async function boot(){if(!state.invoiceFilters.month)state.invoi
 const bootWith="async function boot(){if(!state.invoiceFilters.month)state.invoiceFilters.month=currentMonthKey();state.dispatchPlan=dispatchPlans();await hydrateCloudData().catch(e=>console.warn('Cloud hydration skipped',e));";
 if(app.includes(bootNeed)) app=app.replace(bootNeed,bootWith); else fail('No se encontró inicio de boot');
 fs.writeFileSync(appPath,app);
-
-const indexPath='index.html';let index=fs.readFileSync(indexPath,'utf8');
-if(!index.includes('<script src="/molino-cloud.js"></script>')){
-  const anchor='<script src="app.js"></script>';
-  if(!index.includes(anchor)) fail('No se encontró app.js en index.html');
-  index=index.replace(anchor,'<script src="/molino-cloud.js"></script>\n'+anchor);
-  fs.writeFileSync(indexPath,index);
-}
 console.log('CLOUD PERSISTENCE V1: PASS');
