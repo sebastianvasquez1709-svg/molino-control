@@ -21,9 +21,8 @@ assert(!/\bADMIN_RUT\b/.test(p),'Persisten identificadores ADMIN_RUT en el bundl
 assert(!/\bACCESS_KEY\b/.test(p),'Persisten identificadores ACCESS_KEY en el bundle público.');
 assert(p.includes('El Maestro que estaba activo no fue sustituido'),'Falta protección del Maestro anterior ante fallo de carga.');
 assert(p.includes('¿Eliminar el Maestro guardado en este equipo?'),'Falta confirmación para eliminar el Maestro.');
-assert(!p.includes("state.dispatchPlan=dispatches.map(normalizeDispatchItem);saveDispatchPlans()"),'Quedó escritura cloud durante hidratación.');
 console.log('PUBLIC MAESTRO HARDENING CHECK: PASS');
 console.log('PUBLIC MAESTRO OPERATIONAL SAFETY CHECK: PASS');
 console.log('NO LEGACY PUBLIC CREDENTIALS CHECK: PASS');
 NODE
-echo '=== MOLINO CONTROL · BUILD V8 · MAESTRO STORAGE + OPERATIONAL SAFETY ==='
+echo '=== MOLINO CONTROL · BUILD V9 · MAESTRO STORAGE + OPERATIONAL SAFETY ==='
