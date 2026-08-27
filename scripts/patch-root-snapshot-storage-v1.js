@@ -3,10 +3,12 @@ const p='app.js';
 let app=fs.readFileSync(p,'utf8');
 const marker='/* ROOT_SNAPSHOT_STORAGE_V1 */';
 if(app.includes(marker)){console.log('ROOT SNAPSHOT STORAGE V1: ALREADY PRESENT');process.exit(0);}
-const readMarker='async function readSnapshot(){';
-const idx=app.indexOf(readMarker);
-if(idx<0)throw new Error('[ROOT SNAPSHOT STORAGE V1] No se encontró readSnapshot.');
-const localFn=`/* ROOT_SNAPSHOT_STORAGE_V1 */
+const start='async function readSnapshot(){';
+const end='\n    async function audit(';
+const idx=app.indexOf(start);
+const endIdx=app.indexOf(end,idx);
+if(idx<0||endIdx<0)throw new Error('[ROOT SNAPSHOT STORAGE V1] No se encontró el bloque íntegro de readSnapshot.');
+const replacement=`/* ROOT_SNAPSHOT_STORAGE_V1 */
 async function readSnapshotLocal(){
   let db;
   try{
@@ -46,8 +48,9 @@ async function readSnapshotLocal(){
     return null;
   }finally{try{db?.close()}catch{}}
 }
-`;
-const replacement=localFn+`async function readSnapshot(){
+async function readSnapshot(){
+  // Primero recuperamos la copia local: es la fuente de verdad de la carga del Excel
+  // y evita que el arranque dependa de un snapshot cloud masivo.
   const local=await readSnapshotLocal();
   if(local)return local;
   try{
@@ -56,6 +59,6 @@ const replacement=localFn+`async function readSnapshot(){
   return null;
 }
 `;
-app=app.slice(0,idx)+replacement+app.slice(idx+readMarker.length);
+app=app.slice(0,idx)+replacement+app.slice(endIdx);
 fs.writeFileSync(p,app);
 console.log('ROOT SNAPSHOT STORAGE V1: PATCHED');
