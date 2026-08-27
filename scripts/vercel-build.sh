@@ -41,6 +41,7 @@ run_patch(){
   check_core
 }
 
+run_patch scripts/patch-root-snapshot-storage-v1.js
 run_patch scripts/patch-cloud-persistence-v1.js
 run_patch scripts/patch-guides-professional-v1.js
 run_patch scripts/patch-fast-docs-v1.js
@@ -74,6 +75,8 @@ const macroV5=fs.readFileSync('panel-macro-pro-v5.js','utf8');
 const guides=fs.readFileSync('scripts/guides-renderer.jsfrag','utf8');
 const fast=fs.readFileSync('scripts/fast-docs-injection.jsfrag','utf8');
 const assert=(ok,msg)=>{if(!ok)throw new Error(msg)};
+assert(app.includes('function readSnapshotLocal()')||app.includes('async function readSnapshotLocal()'),'Falta reconstrucción local del Maestro.');
+assert(app.includes('ROOT_SNAPSHOT_STORAGE_V1'),'Falta contrato raíz de almacenamiento local.');
 assert(app.includes('function renderGuides(){'),'Falta Guías profesional.');
 assert(app.includes('FAST DOCUMENT MODULES V1'),'Falta optimización documental.');
 assert(app.includes('function renderInvoices(){')&&app.includes('function renderBoletas(){'),'Facturas/Boletas fuera de servicio.');
@@ -100,6 +103,7 @@ assert((app.match(/MolinoDispatchBridge/g)||[]).length===1,'El bridge de Despach
 assert((app.match(/REPORTS SACOS\/GRANEL UNDEFINED-REFERENCE GUARD V1/g)||[]).length===1,'El guard de informes quedó duplicado.');
 assert((app.match(/FORMULA_ZERO_ROWS_GUARD_V1/g)||[]).length===1,'El guard formulaZeroRows quedó duplicado.');
 assert((fast.match(/FAST DOCUMENT MODULES V1/g)||[]).length===1,'Fragmento FAST DOCUMENTS inválido.');
+console.log('ROOT SNAPSHOT STORAGE CHECK: PASS');
 console.log('CORE MODULES STATIC CHECK: PASS');
 console.log('GUIDES RENDERER STATIC CHECK: PASS');
 console.log('DISPATCH CONTROLS V12 CHECK: PASS');
