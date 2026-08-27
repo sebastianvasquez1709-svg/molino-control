@@ -4,8 +4,8 @@ node scripts/patch-worker-index-v1.js
 node scripts/patch-maestro-storage-hardening-v1.js
 node scripts/patch-remove-legacy-credentials-v1.js
 node scripts/patch-maestro-operational-safety-v1.js
-node scripts/test-maestro-storage-contract-v1.js
 sh scripts/vercel-build-v2.sh
+node scripts/test-maestro-storage-contract-v1.js
 node scripts/patch-public-existence-master-ine-v2.js
 node scripts/patch-public-existence-master-ine-v3.js
 node scripts/patch-public-existence-master-ine-v4.js
@@ -26,4 +26,4 @@ console.log('PUBLIC MAESTRO HARDENING CHECK: PASS');
 console.log('PUBLIC MAESTRO OPERATIONAL SAFETY CHECK: PASS');
 console.log('NO LEGACY PUBLIC CREDENTIALS CHECK: PASS');
 NODE
-echo '=== MOLINO CONTROL · BUILD V10 · REGRESSION CONTRACT ENFORCED ==='
+echo '=== MOLINO CONTROL · BUILD V11 · REGRESSION CONTRACT AFTER PATCHES ==='
