@@ -15,6 +15,7 @@ node scripts/patch-existence-live-sync-v3.js
 node scripts/patch-existence-live-sync-v4.js
 node scripts/patch-private-live-refresh-v1.js
 node scripts/patch-private-existence-reactive-reengine-v1.js
+node scripts/patch-private-existence-reactive-reengine-v2.js
 node --check public/app.js
 node --check public/molino-cloud.js
 node - <<'NODE'
@@ -28,10 +29,14 @@ assert(p.includes('MAESTRO_OPERATIONAL_SAFETY_V1'),'Protecciones operativas no l
 assert(p.includes('ROOT_SNAPSHOT_STORAGE_V1'),'Falta almacenamiento raíz del Maestro.');
 assert(p.includes('MC_PRIVATE_LIVE_REFRESH_V1'),'Falta refresco en vivo del módulo privado.');
 assert(p.includes('PRIVATE EXISTENCE REACTIVE REENGINEERING V1'),'Falta la reingeniería reactiva de Indicadores/Existencia.');
+assert(p.includes('PRIVATE EXISTENCE REACTIVE REENGINEERING V2'),'Falta el cierre de scope de la reingeniería reactiva.');
 assert(p.includes('const existenceRows=Array.isArray(state.existenceRecords)'),'Indicadores privados no usa la fuente canónica de Existencia.');
 assert(p.includes('if(m?.displayIne?.items?.length)'),'El indicador no prioriza el INE sincronizado del registro.');
 assert(p.includes('molino:data-change'),'Falta el bus de invalidación reactiva.');
 assert(p.includes('window.__refreshPrivateExistenceModules'),'Falta hook determinista de refresco.');
+assert(p.includes('b.addEventListener(\'click\',()=>window.show(b.dataset.view))'),'La navegación no pasa por el refresco reactivo.');
+assert(p.includes('OFFICIAL_INE_CACHE.delete(key)'),'El caché INE no se invalida al cambiar Existencia.');
+assert(p.includes('months.find(x=>String(x.key)===String(state.ineSelected))||existenceSelected'),'El selector de mes no tiene prioridad explícita.');
 assert(p.includes('function existenceUnifiedDisplayModel(m){'),'Falta modelo canónico de visualización Existencia.');
 assert(p.includes('function renderExistencias(){'),'Falta renderizador de Existencia.');
 assert(p.includes('Imprimir este informe'),'Falta acción de impresión del informe de Existencia.');
@@ -52,9 +57,10 @@ console.log('PUBLIC MAESTRO OPERATIONAL SAFETY CHECK: PASS');
 console.log('NO LEGACY PUBLIC CREDENTIALS CHECK: PASS');
 console.log('LIVE EXACT INE HYDRATION CHECK: PASS');
 console.log('PRIVATE LIVE REFRESH CHECK: PASS');
-console.log('PRIVATE/EXISTENCE REACTIVE REENGINEERING CHECK: PASS');
+console.log('PRIVATE/EXISTENCE REACTIVE REENGINEERING V1 CHECK: PASS');
+console.log('PRIVATE/EXISTENCE REACTIVE REENGINEERING V2 CHECK: PASS');
 console.log('EXISTENCE DISPLAY/PRINT SYNC CHECK: PASS');
 console.log('EXISTENCE LIVE SYNC V3 CHECK: PASS');
 console.log('EXISTENCE LIVE SYNC V4 CHECK: PASS');
 NODE
-echo '=== MOLINO CONTROL · BUILD V20 · REACTIVE PRIVATE + EXISTENCE MODULES ==='
+echo '=== MOLINO CONTROL · BUILD V21 · PRIVATE/EXISTENCE REACTIVE SCOPE + CACHE FIX ==='
