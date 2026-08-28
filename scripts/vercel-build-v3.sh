@@ -16,6 +16,7 @@ node scripts/patch-existence-live-sync-v4.js
 node scripts/patch-private-live-refresh-v1.js
 node scripts/patch-private-existence-reactive-reengine-v1.js
 node scripts/patch-private-existence-reactive-reengine-v2.js
+node scripts/patch-dispatch-product-options-safe-v1.js
 node --check public/app.js
 node --check public/molino-cloud.js
 node - <<'NODE'
@@ -46,6 +47,9 @@ assert(p.includes('REGISTRO DE EXISTENCIA · INE'),'Falta impresión completa Re
 assert(p.includes('EXISTENCE LIVE SYNC V4'),'Falta la corrección final de persistencia/refresco de Existencia.');
 assert(p.includes("e.target.value='';"),'Falta habilitar la recarga del mismo archivo.');
 assert(p.includes('await persistExistenceRecords(state.existenceRecords);'),'Falta persistencia del INE sincronizado.');
+assert(p.includes('function dispatchProductLabel(value){'),'Falta normalización segura de productos en Despachos.');
+assert(p.includes("String(a).localeCompare(String(b),'es-CL'"),'El comparador seguro de productos no llegó al artefacto.');
+assert(!/function productOptions\(\)\{return \[\.\.\.new Set\(\[\.\.\.\(state\.snapshot\?\.products\|\|\[\]\),\.\.\.defaultProducts\(\)\]\)\]\.sort\(\(a,b\)=>a\.localeCompare\(/.test(p),'Quedó el comparador inseguro original de Despachos.');
 assert(!/\bADMIN_RUT\b/.test(p),'Persisten identificadores ADMIN_RUT en el bundle público.');
 assert(!/\bACCESS_KEY\b/.test(p),'Persisten identificadores ACCESS_KEY en el bundle público.');
 assert(c.includes('molino_ine_sales_periods'),'Falta carga del índice de períodos INE.');
@@ -57,8 +61,11 @@ console.log('NO LEGACY PUBLIC CREDENTIALS CHECK: PASS');
 console.log('LIVE EXACT INE HYDRATION CHECK: PASS');
 console.log('PRIVATE LIVE REFRESH CHECK: PASS');
 console.log('PRIVATE/EXISTENCE REACTIVE REENGINEERING V2 CHECK: PASS');
+console.log('DISPATCH PRODUCT NORMALIZATION CHECK: PASS');
+console.log('DISPATCH SAFE LOCALE COMPARATOR CHECK: PASS');
+console.log('DISPATCH LEGACY COMPARATOR REMOVED: PASS');
 console.log('EXISTENCE DISPLAY/PRINT SYNC CHECK: PASS');
 console.log('EXISTENCE LIVE SYNC V3 CHECK: PASS');
 console.log('EXISTENCE LIVE SYNC V4 CHECK: PASS');
 NODE
-echo '=== MOLINO CONTROL · BUILD V21 · PRIVATE/EXISTENCE REACTIVE SCOPE + CACHE FIX ==='
+echo '=== MOLINO CONTROL · BUILD V22 · DISPATCH PRODUCT TYPE-SAFETY + PRIVATE/EXISTENCE REACTIVE ==='
