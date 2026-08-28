@@ -12,6 +12,7 @@ node scripts/patch-public-existence-master-ine-v3.js
 node scripts/patch-public-existence-master-ine-v4.js
 node scripts/patch-existence-display-sync-v1.js
 node scripts/patch-existence-live-sync-v3.js
+node scripts/patch-existence-live-sync-v4.js
 node scripts/patch-private-live-refresh-v1.js
 node --check public/app.js
 node --check public/molino-cloud.js
@@ -33,6 +34,9 @@ assert(p.includes('state.existenceSelected=last.key'),'El upload no selecciona e
 assert(p.includes('const official=await resolveOfficialInePeriod(last.key)'),'El upload no solicita INE del mismo período.');
 assert(p.includes('m?.displayIne'),'El modelo no prioriza el dato INE recién sincronizado.');
 assert(p.includes('REGISTRO DE EXISTENCIA · INE'),'Falta impresión completa Registro+INE.');
+assert(p.includes('EXISTENCE LIVE SYNC V4'),'Falta la corrección final de persistencia/refresco de Existencia.');
+assert(p.includes("e.target.value='';"),'Falta habilitar la recarga del mismo archivo.');
+assert(p.includes('await persistExistenceRecords(state.existenceRecords);'),'Falta persistencia del INE sincronizado.');
 assert(!/\bADMIN_RUT\b/.test(p),'Persisten identificadores ADMIN_RUT en el bundle público.');
 assert(!/\bACCESS_KEY\b/.test(p),'Persisten identificadores ACCESS_KEY en el bundle público.');
 assert(c.includes('molino_ine_sales_periods'),'Falta carga del índice de períodos INE.');
@@ -45,5 +49,6 @@ console.log('LIVE EXACT INE HYDRATION CHECK: PASS');
 console.log('PRIVATE INE LIVE REFRESH CHECK: PASS');
 console.log('EXISTENCE DISPLAY/PRINT SYNC CHECK: PASS');
 console.log('EXISTENCE LIVE SYNC V3 CHECK: PASS');
+console.log('EXISTENCE LIVE SYNC V4 CHECK: PASS');
 NODE
-echo '=== MOLINO CONTROL · BUILD V18 · DETERMINISTIC EXISTENCE DISPLAY + PRINT ==='
+echo '=== MOLINO CONTROL · BUILD V19 · EXISTENCE UPLOAD AUTHORITATIVE + PERSISTED ==='
