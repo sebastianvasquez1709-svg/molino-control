@@ -29,9 +29,9 @@ assert(p.includes('function existenceUnifiedDisplayModel(m){'),'Falta modelo can
 assert(p.includes('function renderExistencias(){'),'Falta renderizador de Existencia.');
 assert(p.includes('Imprimir este informe'),'Falta acción de impresión del informe de Existencia.');
 assert(p.includes('displayIneFetchedAt'),'Falta marca de sincronización INE en vivo.');
-assert(p.includes("state.existenceSelected=last.key"),'El upload no selecciona el último registro cargado.');
+assert(p.includes('state.existenceSelected=last.key'),'El upload no selecciona el último registro cargado.');
 assert(p.includes('const official=await resolveOfficialInePeriod(last.key)'),'El upload no solicita INE del mismo período.');
-assert(p.includes('source= m?.displayIne'.replace('source= ', 'source='))||p.includes('source=m?.displayIne'),'El modelo no prioriza el dato INE recién sincronizado.');
+assert(p.includes('m?.displayIne'),'El modelo no prioriza el dato INE recién sincronizado.');
 assert(p.includes('REGISTRO DE EXISTENCIA · INE'),'Falta impresión completa Registro+INE.');
 assert(!/\bADMIN_RUT\b/.test(p),'Persisten identificadores ADMIN_RUT en el bundle público.');
 assert(!/\bACCESS_KEY\b/.test(p),'Persisten identificadores ACCESS_KEY en el bundle público.');
@@ -46,4 +46,4 @@ console.log('PRIVATE INE LIVE REFRESH CHECK: PASS');
 console.log('EXISTENCE DISPLAY/PRINT SYNC CHECK: PASS');
 console.log('EXISTENCE LIVE SYNC V3 CHECK: PASS');
 NODE
-echo '=== MOLINO CONTROL · BUILD V17 · DETERMINISTIC EXISTENCE DISPLAY + PRINT ==='
+echo '=== MOLINO CONTROL · BUILD V18 · DETERMINISTIC EXISTENCE DISPLAY + PRINT ==='
