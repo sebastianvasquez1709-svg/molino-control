@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "sh scripts/vercel-build-v8.sh",
+  "buildCommand": "sh scripts/vercel-build-v9.sh",
   "outputDirectory": "public",
   "rewrites": [
     { "source": "/", "destination": "/index-auto.html" },
