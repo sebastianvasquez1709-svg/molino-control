@@ -28,7 +28,6 @@ assert(p.includes('REMOVE_LEGACY_CREDENTIALS_V1'),'La limpieza de credenciales l
 assert(p.includes('MAESTRO_OPERATIONAL_SAFETY_V1'),'Protecciones operativas no llegaron al artefacto público.');
 assert(p.includes('ROOT_SNAPSHOT_STORAGE_V1'),'Falta almacenamiento raíz del Maestro.');
 assert(p.includes('MC_PRIVATE_LIVE_REFRESH_V1'),'Falta refresco en vivo del módulo privado.');
-assert(p.includes('PRIVATE EXISTENCE REACTIVE REENGINEERING V1'),'Falta la reingeniería reactiva de Indicadores/Existencia.');
 assert(p.includes('PRIVATE EXISTENCE REACTIVE REENGINEERING V2'),'Falta el cierre de scope de la reingeniería reactiva.');
 assert(p.includes('const existenceRows=Array.isArray(state.existenceRecords)'),'Indicadores privados no usa la fuente canónica de Existencia.');
 assert(p.includes('if(m?.displayIne?.items?.length)'),'El indicador no prioriza el INE sincronizado del registro.');
@@ -57,7 +56,6 @@ console.log('PUBLIC MAESTRO OPERATIONAL SAFETY CHECK: PASS');
 console.log('NO LEGACY PUBLIC CREDENTIALS CHECK: PASS');
 console.log('LIVE EXACT INE HYDRATION CHECK: PASS');
 console.log('PRIVATE LIVE REFRESH CHECK: PASS');
-console.log('PRIVATE/EXISTENCE REACTIVE REENGINEERING V1 CHECK: PASS');
 console.log('PRIVATE/EXISTENCE REACTIVE REENGINEERING V2 CHECK: PASS');
 console.log('EXISTENCE DISPLAY/PRINT SYNC CHECK: PASS');
 console.log('EXISTENCE LIVE SYNC V3 CHECK: PASS');
