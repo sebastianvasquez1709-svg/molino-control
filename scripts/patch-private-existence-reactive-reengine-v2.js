@@ -15,7 +15,7 @@ const bridge=s.slice(bridgeStart,outerEnd);
 s=s.slice(0,bridgeStart)+s.slice(outerEnd);
 const rootEnd=s.lastIndexOf('})();');
 if(rootEnd<0)fail('No se encontró cierre raíz después de mover el bridge.');
-const safeBridge=bridge.replace('const MARK', 'const MARK_UNUSED');
+let safeBridge=bridge.replace('const MARK', 'const MARK_UNUSED');
 
 // Repair month selection: explicit INE selection wins over a remembered Existencia record.
 const oldSel="  let selected=existenceSelected||months.find(x=>String(x.key)===String(state.ineSelected))||months[months.length-1]||fallback||{items:[],totalNeto:0,totalKg:0,totalPromedio:null,netoHarinas:0,kgHarinas:0,promedioHarinas:null,key:'',periodo:'Sin datos',quality:{missing:['Carga un Excel Maestro o Registro de Existencia.']},inventory:{}};";
