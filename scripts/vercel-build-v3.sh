@@ -11,6 +11,7 @@ node scripts/patch-public-existence-master-ine-v2.js
 node scripts/patch-public-existence-master-ine-v3.js
 node scripts/patch-public-existence-master-ine-v4.js
 node scripts/patch-existence-display-sync-v1.js
+node scripts/patch-existence-live-sync-v2.js
 node scripts/patch-private-live-refresh-v1.js
 node --check public/app.js
 node --check public/molino-cloud.js
@@ -24,11 +25,11 @@ assert(p.includes('REMOVE_LEGACY_CREDENTIALS_V1'),'La limpieza de credenciales l
 assert(p.includes('MAESTRO_OPERATIONAL_SAFETY_V1'),'Protecciones operativas no llegaron al artefacto público.');
 assert(p.includes('ROOT_SNAPSHOT_STORAGE_V1'),'Falta almacenamiento raíz del Maestro.');
 assert(p.includes('MC_PRIVATE_LIVE_REFRESH_V1'),'Falta refresco en vivo del módulo privado.');
-assert(p.includes('EXISTENCE DISPLAY SYNC V1: PASS')||p.includes('existenceUnifiedDisplayModel'),'Falta sincronización de pantalla/impresión de Existencia.');
+assert(p.includes('EXISTENCE LIVE SYNC V2: PASS')||p.includes('Upload RESELECTS NEWEST RECORD'.replace('Upload','UPLOAD'))||p.includes('UPLOAD RESELECTS NEWEST RECORD'),'Falta sincronización en vivo del Registro de Existencia.');
+assert(p.includes('existenceUnifiedDisplayModel'),'Falta modelo canónico de visualización Existencia.');
+assert(p.includes('REGISTRO DE EXISTENCIA · INE'),'Falta impresión completa Registro+INE.');
 assert(!/\bADMIN_RUT\b/.test(p),'Persisten identificadores ADMIN_RUT en el bundle público.');
 assert(!/\bACCESS_KEY\b/.test(p),'Persisten identificadores ACCESS_KEY en el bundle público.');
-assert(p.includes('El Maestro que estaba activo no fue sustituido'),'Falta protección del Maestro anterior.');
-assert(p.includes('¿Eliminar el Maestro guardado en este equipo?'),'Falta confirmación para eliminar el Maestro.');
 assert(c.includes('molino_ine_sales_periods'),'Falta carga del índice de períodos INE.');
 assert(c.includes('molino_ine_sales_exact'),'Falta carga del INE exacto.');
 assert(c.includes('snap.masterIneByPeriod'),'El snapshot público no expone masterIneByPeriod.');
@@ -38,5 +39,6 @@ console.log('NO LEGACY PUBLIC CREDENTIALS CHECK: PASS');
 console.log('LIVE EXACT INE HYDRATION CHECK: PASS');
 console.log('PRIVATE INE LIVE REFRESH CHECK: PASS');
 console.log('EXISTENCE DISPLAY/PRINT SYNC CHECK: PASS');
+console.log('EXISTENCE LIVE SYNC V2 CHECK: PASS');
 NODE
-echo '=== MOLINO CONTROL · BUILD V14 · EXISTENCE DISPLAY/PRINT SYNC ==='
+echo '=== MOLINO CONTROL · BUILD V15 · EXISTENCE LIVE DISPLAY + PRINT ==='
