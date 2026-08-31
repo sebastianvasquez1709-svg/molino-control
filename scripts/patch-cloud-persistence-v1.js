@@ -5,18 +5,46 @@ function fail(msg){throw new Error('[CLOUD PERSISTENCE V1] '+msg)}
 const marker="const CONTACTS_DB='molino-client-contacts-v1';";
 if(!app.includes(marker)) fail('No se encontró CONTACTS_DB');
 const bridge=`
-// V50.0 CLOUD PERSISTENCE: Supabase is the durable source when an Auth session exists.
+// V50.1 CLOUD PERSISTENCE: transitional cloud layer.
+// Contacts/dispatch keep the pre-existing RPC path; Existencia is routed through
+// MolinoCloudStateV2 because the current login is a local compatibility session,
+// not a Supabase Auth session. This avoids silently losing monthly history.
 async function cloudAdminSession(){try{return window.MolinoCloud?.getSession?await window.MolinoCloud.getSession():null}catch{return null}}
 async function cloudRpc(name,args={}){const sb=await window.MolinoCloud.client();const {data,error}=await sb.rpc(name,args);if(error)throw error;return data}
 async function cloudLoadContacts(){try{if(!await cloudAdminSession())return null;const rows=await cloudRpc('app_contacts_list');const book={};for(const row of (rows||[]))book[row.client_key]=row.payload||{};if(Object.keys(book).length)localStorage.setItem(CONTACTS_DB,JSON.stringify(book));return book}catch(e){console.warn('Cloud contacts unavailable',e);return null}}
 async function cloudSaveContact(key,payload){try{if(!await cloudAdminSession())return;await cloudRpc('app_contacts_upsert',{p_key:key,p_payload:payload||{}})}catch(e){console.warn('Cloud contact save unavailable',e)}}
 async function cloudLoadDispatches(){try{if(!await cloudAdminSession())return null;const rows=await cloudRpc('app_dispatch_list');return (rows||[]).map(r=>r.payload).filter(Boolean)}catch(e){console.warn('Cloud dispatches unavailable',e);return null}}
 async function cloudReplaceDispatches(rows){try{if(!await cloudAdminSession())return;await cloudRpc('app_dispatch_replace',{p_rows:Array.isArray(rows)?rows:[]})}catch(e){console.warn('Cloud dispatch save unavailable',e)}}
-async function cloudLoadExistence(){try{if(!await cloudAdminSession())return null;const rows=await cloudRpc('app_existence_list');return (rows||[]).map(r=>({...((r&&r.payload)||{}),key:r.key,periodo:r.periodo||r?.payload?.periodo}))}catch(e){console.warn('Cloud existence unavailable',e);return null}}
-async function cloudReplaceExistence(rows){try{if(!await cloudAdminSession())return;for(const row of (Array.isArray(rows)?rows:[])){await cloudRpc('app_existence_upsert',{p_key:String(row.key),p_periodo:String(row.periodo||row.key||''),p_payload:row})}}catch(e){console.warn('Cloud existence save unavailable',e)}}
+async function cloudExistenceBridge(){
+  try{
+    if(window.MolinoCloudStateV2)return window.MolinoCloudStateV2;
+    await import('/molino-cloud-state-v2.js');
+    return window.MolinoCloudStateV2||null;
+  }catch(e){console.warn('Durable existence bridge unavailable',e);return null}
+}
+async function cloudLoadExistence(){
+  try{
+    if(!await cloudAdminSession())return null;
+    const b=await cloudExistenceBridge();
+    if(!b)return null;
+    return await b.listExistence();
+  }catch(e){console.warn('Cloud existence unavailable',e);return null}
+}
+async function cloudReplaceExistence(rows){
+  try{
+    if(!await cloudAdminSession())return;
+    const b=await cloudExistenceBridge();
+    if(!b)return;
+    const clean=(Array.isArray(rows)?rows:[]).filter(x=>x&&x.key);
+    const desired=new Set(clean.map(x=>String(x.key)));
+    const existing=await b.listExistence().catch(()=>[]);
+    for(const row of clean)await b.upsertExistence(row);
+    for(const row of existing)if(row?.key&&!desired.has(String(row.key)))await b.deleteExistence(row.key);
+  }catch(e){console.warn('Cloud existence save unavailable',e)}
+}
 async function hydrateCloudData(){
-  // Hydration is strictly read-only. It may refresh local caches, but it never
-  // writes the fetched cloud state back to Supabase during application boot.
+  // Hydration is read-only: it may refresh local caches, but never writes the
+  // cloud state back during application boot.
   const contacts=await cloudLoadContacts(); if(contacts) applyClientContacts();
   const dispatches=await cloudLoadDispatches(); if(Array.isArray(dispatches)){
     state.dispatchPlan=dispatches.map(normalizeDispatchItem);
@@ -29,7 +57,7 @@ async function hydrateCloudData(){
   }
 }
 `;
-if(!app.includes('CLOUD PERSISTENCE: Supabase is the durable source')) app=app.replace(marker,marker+bridge);
+if(!app.includes('CLOUD PERSISTENCE: transitional cloud layer')) app=app.replace(marker,marker+bridge);
 app=app.replace(/const EMBEDDED_LOGO_DATA='data:image\/jpeg;base64,[^']+';/,"const EMBEDDED_LOGO_DATA='/logo molino.jpg';");
 const saveContactOld="function saveContactForClient(c,data){if(!c)return;const book=loadClientContacts();book[contactKey(c)]={...clientContact(c),...data};saveClientContacts(book);applyClientContacts()}";
 const saveContactNew="function saveContactForClient(c,data){if(!c)return;const key=contactKey(c),book=loadClientContacts();const payload={...clientContact(c),...data};book[key]=payload;saveClientContacts(book);applyClientContacts();cloudSaveContact(key,payload)}";
@@ -66,3 +94,4 @@ const bootWith="async function boot(){if(!state.invoiceFilters.month)state.invoi
 if(app.includes(bootNeed)) app=app.replace(bootNeed,bootWith); else fail('No se encontró inicio de boot');
 fs.writeFileSync(appPath,app);
 console.log('CLOUD PERSISTENCE V1: PASS');
+console.log('EXISTENCE DURABLE LOCAL-BRIDGE ROUTING: PASS');
