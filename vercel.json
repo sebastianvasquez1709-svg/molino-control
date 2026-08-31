@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "sh scripts/vercel-build-v9.sh",
+  "buildCommand": "sh scripts/vercel-build-reingenieria-v1.sh",
   "outputDirectory": "public",
   "rewrites": [
     { "source": "/", "destination": "/index-auto.html" },
