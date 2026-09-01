@@ -23,6 +23,7 @@ check_core(){
   node --check panel-macro-pro-v3.js
   node --check panel-macro-pro-v4.js
   node --check panel-macro-pro-v5.js
+  node --check panel-macro-pro-v6.js
 }
 
 check_fragment(){
@@ -72,6 +73,9 @@ const clients=fs.readFileSync('clients-enhanced-v1.js','utf8');
 const macro=fs.readFileSync('dashboard-macro-enhanced-v1.js','utf8');
 const macroV4=fs.readFileSync('panel-macro-pro-v4.js','utf8');
 const macroV5=fs.readFileSync('panel-macro-pro-v5.js','utf8');
+const macroV6=fs.readFileSync('panel-macro-pro-v6.js','utf8');
+const macroPremium=fs.readFileSync('panel-macro-premium-v2.css','utf8');
+const globalPremium=fs.readFileSync('global-theme-premium-v2.css','utf8');
 const guides=fs.readFileSync('scripts/guides-renderer.jsfrag','utf8');
 const fast=fs.readFileSync('scripts/fast-docs-injection.jsfrag','utf8');
 const assert=(ok,msg)=>{if(!ok)throw new Error(msg)};
@@ -96,6 +100,12 @@ assert(clients.includes('__LYRA_CLIENTS_V1__'),'Falta marcador de versión de Cl
 assert(macro.includes('__LYRA_MACRO_V1__')&&macro.includes("page==='macro'"),'Módulo Panel Macro V1 incompleto.');
 assert(macroV4.includes('__MC_MACRO_PRO_V4__'),'Renderer Macro V4 incompleto.');
 assert(macroV5.includes('__MC_MACRO_PRO_V5__'),'Renderer Macro V5 incompleto.');
+assert(macro.includes('panel-macro-pro-v6.js')&&macro.includes('panel-macro-premium-v2.css'),'El cargador no apunta al Panel Macro Premium V6.');
+assert(macro.includes('global-theme-premium-v2.css'),'El tema corporativo Premium V2 no está activo.');
+assert(macroV6.includes('__MC_MACRO_PRO_V6__')&&macroV6.includes('mcV6GridMain'),'Renderer Macro V6 incompleto.');
+assert(macroV6.includes('function productTable(items,total)'),'Falta la tabla compacta de productos.');
+assert(macroPremium.includes('mcPremiumDraw')&&macroPremium.includes('prefers-reduced-motion'),'Movimiento Premium sin protección de accesibilidad.');
+assert(globalPremium.includes('filter:none!important'),'El logo corporativo no está protegido de transformaciones.');
 assert(app.includes('MC_APP_STATE_BRIDGE_V1'),'Falta puente de estado de la app.');
 assert(guides.includes('const csvCell=')&&guides.includes('const csvLine='),'Guías no usa helpers CSV seguros.');
 assert((app.match(/FAST DOCUMENT MODULES V1/g)||[]).length===1,'La inyección FAST DOCUMENTS quedó duplicada.');
@@ -114,6 +124,7 @@ console.log('CLIENTS ENHANCED V1 CHECK: PASS');
 console.log('MACRO ENHANCED V1 CHECK: PASS');
 console.log('MACRO V4 CHECK: PASS');
 console.log('MACRO V5 CHECK: PASS');
+console.log('MACRO PREMIUM V6 CHECK: PASS');
 console.log('APP STATE BRIDGE CHECK: PASS');
 console.log('INJECTION DUPLICATION CHECK: PASS');
 console.log('NO HARDCODED REPORT SNAPSHOT CHECK: PASS');
