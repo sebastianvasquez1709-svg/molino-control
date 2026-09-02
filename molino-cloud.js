@@ -1,7 +1,7 @@
 /* Molino Control · Cloud Data Layer
  * Browser-safe Supabase client. Never contains service_role secrets.
- * Compatibility bridge: the current Molino login is validated by a protected
- * database RPC until Supabase Auth users are provisioned.
+ * RUT compatibility bridge + real Supabase Auth session.
+ * Data RPCs only run after a valid JWT has been issued.
  */
 (() => {
   'use strict';
@@ -31,20 +31,33 @@
   async function getSession(){ return localSession; }
   async function signIn(identifier,password){
     const sb=await client();
-    const {data,error}=await withTimeout(sb.rpc('molino_local_auth',{p_rut:String(identifier||'').trim(),p_pin:String(password||'')}));
-    if(error) throw error;
-    if(!data?.ok) throw new Error(data?.message||'Credenciales inválidas.');
-    localSession={local:true,user:{id:data.id,email:data.email,rut:data.rut,role:String(data.rol||'operador').toUpperCase(),nombre:data.nombre||data.email,mustChangePin:data.must_change_pin===true}};
+    const rawIdentifier=String(identifier||'').trim();
+    let profile;
+    if(rawIdentifier.includes('@')){
+      const {data,error}=await withTimeout(sb.auth.signInWithPassword({email:rawIdentifier,password:String(password||'')}));
+      if(error||!data?.session)throw new Error('Correo o clave incorrectos.');
+      const meta=data.user?.app_metadata||{};
+      profile={id:data.user.id,email:data.user.email,rut:meta.rut||data.user.email,rol:meta.role||'operador',nombre:meta.nombre||data.user.email,must_change_pin:meta.must_change_pin===true};
+      localSession={...data.session,local:false,user:{id:profile.id,email:profile.email,rut:profile.rut,role:String(profile.rol||'operador').toUpperCase(),nombre:profile.nombre||profile.email,mustChangePin:profile.must_change_pin===true}};
+    }else{
+      await sb.auth.signOut({scope:'local'}).catch(()=>{});
+      const {data,error}=await withTimeout(sb.rpc('molino_local_auth',{p_rut:rawIdentifier,p_pin:String(password||'')}));
+      if(error)throw error;if(!data?.ok)throw new Error(data?.message||'Credenciales inválidas.');
+      profile=data;
+      const auth=await withTimeout(sb.auth.signInWithPassword({email:data.email,password:String(password||'')}));
+      if(auth.error||!auth.data?.session)throw new Error('La cuenta requiere completar la migración de seguridad.');
+      localSession={...auth.data.session,local:false,user:{id:data.id,email:data.email,rut:data.rut,role:String(data.rol||'operador').toUpperCase(),nombre:data.nombre||data.email,mustChangePin:data.must_change_pin===true}};
+    }
     localSession._identifier=String(identifier||'').trim();
     localSession._password=String(password||'');
     clearCache();
     return localSession;
   }
-  async function signOut(){localSession=null;clearCache();}
+  async function signOut(){try{const sb=await client();await sb.auth.signOut()}finally{localSession=null;clearCache()}}
   async function changePin(currentPin,newPin){
     if(!localSession)throw new Error('Sesión no iniciada.');
     const sb=await client();
-    const {data,error}=await withTimeout(sb.rpc('molino_change_pin_local',{p_rut:localSession._identifier,p_current_pin:String(currentPin||''),p_new_pin:String(newPin||'')}));
+    const {data,error}=await withTimeout(sb.rpc('molino_change_password_auth',{p_current_pin:String(currentPin||''),p_new_pin:String(newPin||'')}));
     if(error)throw error;if(!data?.ok)throw new Error(data?.message||'No se pudo actualizar la clave.');
     localSession._password=String(newPin);localSession.user.mustChangePin=false;clearCache();return data;
   }
