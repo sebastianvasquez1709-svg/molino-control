@@ -125,23 +125,27 @@ function rowFamily(r){return String(val(r,['family','familia','detalle','detail'
 function rowOrigin(r){return String(val(r,['origenDestino','origen','destino','cliente','client','source','Origen/Destino'])||'SIN ORIGEN/DESTINO').trim()}
 function rowKg(r){return nval(r,['salida','salidaKg','Salida','U','u','kg','cantidad','cantidadSalida'])}
 function rowValue(r){return nval(r,['salida$','salidaValor','valorSalida','valorMovto$','Valor Movto','valor'])}
-function rowText(r){return normalizeText([rowCode(r),rowFamily(r),rowOrigin(r)].join(' '))}
+function rowText(r){return normalizeText([rowCode(r),rowFamily(r),rowOrigin(r),val(r,['producto','product','AB']),val(r,['detalle','detail','AC']),val(r,['classification','clasificacion','AH']),val(r,['ax','AX'])].join(' '))}
 function isBigBag(r){const c=rowCode(r),t=rowText(r);return ['HF800','HFM800','SEMOL800','S800'].includes(c)||/BIG ?BAG|800 ?KG/.test(t)}
 function isTenKg(r){const c=rowCode(r),t=rowText(r);return ['10KG','ESP10','HFM10','GRITZGR10','A24','A39'].includes(c)||/(^| )10 ?KG( |$)|SACO X 10/.test(t)}
-function isGranel(r){const t=rowText(r);return !isBigBag(r)&&/(^| )GRANEL( |$)|A GRANEL/.test(t)}
+function isGranel(r){
+  const ax=normalizeText(val(r,['ax','AX'])),classification=normalizeText(val(r,['classification','clasificacion','AH']));
+  if(ax)return ax==='GRANEL';
+  if(classification==='GRANEL')return true;
+  const t=rowText(r);return !isBigBag(r)&&/(^| )GRANEL( |$)|A GRANEL/.test(t);
+}
 function modelAf(r){
   const kg=rowKg(r);
+  const exactKey=['af','AF','ventasSacos','VENTASSACOS'].find(k=>r&&Object.prototype.hasOwnProperty.call(r,k)&&r[k]!==''&&r[k]!=null);
+  if(exactKey)return {value:num(r[exactKey]),rule:'AF validado del Maestro',factor:num(r[exactKey])?kg/num(r[exactKey]):0};
   if(isBigBag(r))return {value:kg/800,rule:'BIG BAG 800 KG → SALIDA / 800',factor:800};
   if(isTenKg(r))return {value:kg/10,rule:'FORMATO 10 KG → SALIDA / 10',factor:10};
   if(isGranel(r))return {value:kg,rule:'GRANEL → SALIDA',factor:1};
   return {value:kg/25,rule:'SACO 25 KG → SALIDA / 25',factor:25};
 }
 function physicalUnits(r){
-  const kg=rowKg(r);
-  if(isBigBag(r))return kg/800;
-  if(isTenKg(r))return kg/10;
   if(isGranel(r))return 0;
-  return kg/25;
+  return modelAf(r).value;
 }
 function modelRow(r){
   const af=modelAf(r);
@@ -338,5 +342,5 @@ function mount(){
 let attempts=0;
 const timer=setInterval(()=>{attempts++;if(mount()||attempts>80)clearInterval(timer)},250);
 document.addEventListener('DOMContentLoaded',()=>mount(),{once:true});
-window.MolinoMonthlyReportsV2=Object.freeze({VERSION,openPanel,printSheets,buildSheets,loadRecords});
+window.MolinoMonthlyReportsV2=Object.freeze({VERSION,openPanel,printSheets,buildSheets,loadRecords,modelRows});
 })();

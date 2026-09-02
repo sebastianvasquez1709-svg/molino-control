@@ -16,7 +16,12 @@ const record={
     {codigo:'ESP10',family:'HARINA 10 KG',salida:1000,'salida$':600000,origenDestino:'CLIENTE'},
     {codigo:'HFM800',family:'H. F. MAIZ KG BIG BAG 800 KG',salida:1600,'salida$':700000,origenDestino:'NESTLE'},
     {codigo:'DB',family:'HARINA GRANEL',salida:5000,'salida$':2000000,origenDestino:'NESTLE'},
-    {codigo:'DEBILGRAN',family:'HARINA GRANEL',salida:7000,'salida$':2800000,origenDestino:'OTRO CLIENTE'}
+    {codigo:'DEBILGRAN',family:'HARINA GRANEL',salida:7000,'salida$':2800000,origenDestino:'OTRO CLIENTE'},
+    {codigo:'HLLAGGRA',family:'HARINILLA KG',classification:'GRANEL',ax:'GRANEL',salida:3218370,af:3218370,'salida$':1},
+    {codigo:'SEMOLGRA',family:'GRITZ SEMOL KG',classification:'GRANEL',ax:'GRANEL',salida:2847390,af:2847390,'salida$':1},
+    {codigo:'HZGRA',family:'ZOOTECNICA KG',classification:'GRANEL',ax:'GRANEL',salida:2174533,af:2174533,'salida$':1},
+    {codigo:'GERGRA',family:'GERMEN KG',classification:'GRANEL',ax:'GRANEL',salida:168660,af:168660,'salida$':1},
+    {codigo:'HLLAFGRA',family:'HARINILLA KG',classification:'GRANEL',ax:'GRANEL',salida:19070,af:19070,'salida$':1}
   ],
   derivedIne:{available:true,items:[
     {name:'HARINA GRANEL',neto:4800000,kg:12000,promedio:400},
@@ -27,6 +32,10 @@ const sheets=api.buildSheets(record);
 if(sheets.length!==7)throw new Error('Se esperaban 7 hojas de informe.');
 const sack=sheets.find(x=>x.key==='nestleSacos')?.html||'';
 if(!sack.includes('102'))throw new Error('Big Bag/10KG no respetan el conteo AF esperado (100 + 2).');
+const modeled=api.modelRows(record);
+for(const expected of [3218370,2847390,2174533,168660,19070]){
+  if(!modeled.some(x=>x.kg===expected&&x.af===expected))throw new Error('AF granel real no preservado: '+expected);
+}
 const nestle=sheets.find(x=>x.key==='nestleGranel')?.html||'';
 if(!nestle.includes('5.000'))throw new Error('Nestle Granel no contiene sus 5.000 KG.');
 if(nestle.includes('12.000'))throw new Error('Nestle Granel está sumando granel de otros clientes.');
@@ -38,6 +47,7 @@ if(source.includes("window.open('','_blank'"))throw new Error('La impresión vol
 if(!source.includes("document.createElement('iframe')"))throw new Error('Falta impresión aislada por iframe.');
 console.log('MONTHLY REPORTS V2: PASS');
 console.log('BIG BAG 800 KG RULE: PASS');
+console.log('REAL GRANEL AF REGRESSION: PASS');
 console.log('FILTERED GRANEL TOTALS: PASS');
 console.log('INE 8 FAMILIES: PASS');
 console.log('IFRAME PRINT SAFETY: PASS');

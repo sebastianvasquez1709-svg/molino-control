@@ -1,6 +1,7 @@
 const fs=require('fs');
 const p='excel-worker.js';
 let s=fs.readFileSync(p,'utf8');
+if(s.includes('const invoiceIndex = new Map();')){console.log('WORKER INDEX V1: already patched');process.exit(0)}
 const old=`    const clients = [...clientsMap.values()].map(c=>{
       const ck=norm(c.rut)||normName(c.nombre); const m=contactMap.get(ck)||{};
       const client={...c,direccion:m.direccion||'',comuna:m.comuna||'',region:m.region||'',contacto:m.contacto||'',telefono:m.telefono||'',email:m.email||'',destinos:[...(destinationMap.get(ck)||[])]};

@@ -14,17 +14,11 @@ function officialIneFromRpcPayload(data,key){
  const totalKg=Number(data.total_kg??items.reduce((a,x)=>a+x.kg,0))||0,totalNeto=Number(data.total_neto??items.reduce((a,x)=>a+x.neto,0))||0;
  items.forEach(x=>{if(!x.promedio&&x.kg)x.promedio=x.neto/x.kg;if(!x.vn)x.vn=totalNeto?x.neto/totalNeto:0;if(!x.kgp)x.kgp=totalKg?x.kg/totalKg:0});
  const kgHarinas=Number(data.kg_harinas??items.slice(0,3).reduce((a,x)=>a+x.kg,0))||0,netoHarinas=Number(data.neto_harinas??items.slice(0,3).reduce((a,x)=>a+x.neto,0))||0;
- return{available:true,key,periodo:ineMonthLabel(key),items,totalKg,totalNeto,totalPromedio:Number(data.total_promedio??(totalKg?totalNeto/totalKg:0))||0,netoHarinas,kgHarinas,promedioHarinas:Number(data.promedio_harinas??(kgHarinas?netoHarinas/kgHarinas:0))||0,source:'EXCEL_MAESTRO_INE_RPC',formulaSource:'MAESTRO_FORMULA_FIJA_UNIVERSAL'};
+ return{available:data.certified!==false,certified:data.certified!==false,key,periodo:ineMonthLabel(key),items,totalKg,totalNeto,totalPromedio:data.total_promedio==null?null:Number(data.total_promedio),netoHarinas,kgHarinas,promedioHarinas:data.promedio_harinas==null?null:Number(data.promedio_harinas),source:'EXCEL_MAESTRO_INE_RPC',formulaSource:'MAESTRO_FORMULA_FIJA_UNIVERSAL',engineVersion:data.engine_version||'',audit:data.audit||{}};
 }
 async function resolveOfficialInePeriod(periodKey){
  const key=normalizeOfficialInePeriod(periodKey);if(!key)return null;if(OFFICIAL_INE_CACHE.has(key))return OFFICIAL_INE_CACHE.get(key);
  try{const session=await(window.MolinoCloud?.getSession?window.MolinoCloud.getSession():null);if(!session?._identifier)return null;const sb=await window.MolinoCloud.client();const [year,month]=key.split('-').map(Number);const {data,error}=await sb.rpc('molino_ine_sales_exact',{p_rut:session._identifier,p_pin:session._password,p_anio:year,p_mes:month});if(error||!data?.ok)return null;const result=officialIneFromRpcPayload(data,key);if(result)OFFICIAL_INE_CACHE.set(key,result);return result}catch(e){console.warn('INE oficial por período no disponible',e);return null}
-}
-function exactIneForExistenceDisplay(m){
- if(m?.quality?.sourceType!=='existencia')return m||null;
- const key=normalizeOfficialInePeriod(m?.periodo||m?.periodKey||m?.key);const cached=OFFICIAL_INE_CACHE.get(key);if(cached)return{...cached,key:String(m?.key||key),periodo:m?.periodo||cached.periodo};
- const maps=[state?.snapshot?.masterIneByPeriod||{}];for(const source of maps){for(const [k,v] of Object.entries(source)){if(normalizeOfficialInePeriod(k)!==key)continue;if(v?.items?.length)return {...v,key:String(m?.key||key),periodo:m?.periodo||v.periodo||key,available:true,source:'EXCEL_MAESTRO_INE_2'}}}
- if(m?.derivedIne?.available){const d={...m.derivedIne,source:'REGISTRO_FORMULA_MAESTRO_FALLBACK'};return d}return null;
 }
 `;
 s=s.slice(0,at)+helper+s.slice(at);

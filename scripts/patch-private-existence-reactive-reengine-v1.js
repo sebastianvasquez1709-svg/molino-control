@@ -15,7 +15,7 @@ const exactFn=[
 "  if(m?.quality?.sourceType!=='existencia') return m||null;",
 "  const rawKey=m?.key||m?.periodKey||m?.periodo||'';",
 "  const key=typeof normalizeOfficialInePeriod==='function'?normalizeOfficialInePeriod(rawKey):String(rawKey).trim();",
-"  if(m?.displayIne?.items?.length){return {...m.displayIne,key,periodKey:key,periodo:m.periodo||m.displayIne.periodo||key,available:true}}",
+"  if(m?.displayIne?.items?.length){if(m.displayIne.available!==false)return {...m.displayIne,key,periodKey:key,periodo:m.periodo||m.displayIne.periodo||key,available:true}}",
 "  if(m?.derivedIne?.available&&m.derivedIne?.items?.length){return {...m.derivedIne,key,periodKey:key,periodo:m.periodo||m.derivedIne.periodo||key,available:true}}",
 "  if(typeof OFFICIAL_INE_CACHE!=='undefined'){const hit=OFFICIAL_INE_CACHE.get(key);if(hit?.items?.length)return {...hit,key,periodKey:key,periodo:m.periodo||hit.periodo||key,available:true}}",
 "  const map=state?.snapshot?.masterIneByPeriod||{};",

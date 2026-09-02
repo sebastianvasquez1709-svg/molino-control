@@ -1,6 +1,7 @@
-// V49.6: lector XLSX robusto + fórmula INE Maestro universal + exclusión Softland de Notas de Crédito.
+// V50.0: lector XLSX robusto + motor canónico compartido con la app.
 // Corrige celdas vacías autocerradas para conservar las columnas S/U/AC/AG.
 // El cálculo de Existencia no depende de perfiles mensuales.
+importScripts('maestro-formulas.js');
 const td=new TextDecoder('utf-8');
 const u16=(dv,o)=>dv.getUint16(o,true),u32=(dv,o)=>dv.getUint32(o,true);
 const xmlText=s=>String(s??'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'\"').replace(/&apos;/g,"'").replace(/&#(\d+);/g,(_,n)=>String.fromCodePoint(Number(n))).replace(/&#x([0-9a-f]+);/gi,(_,n)=>String.fromCodePoint(parseInt(n,16)));
@@ -24,8 +25,8 @@ async function parseXlsx(buf){const z=await unzipEntries(buf),get=async name=>z.
   // Nombres de hoja tolerantes: Excel puede guardar "INE (2)" o "INE  (2)"
   // según cómo se haya creado/copied el libro. La lógica de negocio es la misma.
   const normSheetName = v => String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
-  const targets=new Set(['BASE DE DATOS','INE (2)','NESTLE SACOS','NESTLE Y CPW','LIBRO','GUIAS'].map(normSheetName));
-  const baseKeep=new Set([0,1,2,9,13,14,15,17,18,20,27,28,29,30,31,35,39,40,42,43,44,45,46,47,48,49,50]);
+  const targets=new Set(['BASE DE DATOS','CODIGOS','INE (2)','NESTLE SACOS','NESTLE Y CPW','LIBRO','GUIAS'].map(normSheetName));
+  const baseKeep=new Set([0,1,2,9,11,13,14,15,17,18,20,27,28,29,30,31,33,35,39,40,42,43,44,45,46,47,48,49,50]);
   const sheets=[];
   for(const m of wb.match(/<sheet\b[^>]*>/gi)||[]){const name=attr(m,'name'),rid=attr(m,'r:id')||attr(m,'id');let target=relMap[rid]||'';target=target.replace(/^\.\//,'');target=target.replace(/^\/+/, '').replace(/^\.\//,'');if(!target.startsWith('xl/'))target='xl/'+target;let rows=[];
     if(target&&z.has(target)){
@@ -115,6 +116,16 @@ self.onmessage = async (e) => {
       return '';
     };
 
+    const maestroFormula=self.MolinoMaestroFormula;
+    if(!maestroFormula)throw new Error('No se pudo cargar el motor canónico de fórmulas del Maestro.');
+    let formulaParams=maestroFormula.parseCodigosMatrix(rowsPart('CODIGOS'));
+    if(!formulaParams.catalogLoaded){
+      try{
+        const response=await fetch('ine-maestro-static.json',{cache:'no-store'});
+        if(response.ok)formulaParams=maestroFormula.fromStaticConfig(await response.json());
+      }catch{}
+    }
+
     post('Leyendo estructura del Maestro', 8);
 
     // ---------- INE / REGISTRO DE EXISTENCIA ----------
@@ -154,25 +165,12 @@ self.onmessage = async (e) => {
       if(/^GERMEN\s+KG$/.test(x))return 'GERMEN KG';
       return '';
     };
-    // Catálogo oficial del Maestro: CODIGOS manda sobre heurísticas.
-    const catalogFamilyByCode = new Map();
-    try {
-      const cr = rowsPart('CODIGOS');
-      const h = (cr[0] || []).map(v => String(v ?? '').trim().toUpperCase());
-      const ci = h.findIndex(v => v === 'CÓDIGO' || v === 'CODIGO');
-      const pi = h.findIndex(v => v === 'PRODUCTO');
-      if (ci >= 0 && pi >= 0) for (const r of cr.slice(1)) {
-        const code = String(r?.[ci] ?? '').trim().toUpperCase();
-        const fam = canonicalFamily(r?.[pi]);
-        if (code && fam) catalogFamilyByCode.set(code, fam);
-      }
-    } catch {}
+    // Catálogo oficial del Maestro: CODIGOS se lee junto al libro y manda.
+    const catalogFamilyByCode = new Map(Object.entries(formulaParams.familyByCode||{}));
     const ineFamilyByCode = (code,name) => {
       const c=String(code||'').trim().toUpperCase();
       if (catalogFamilyByCode.has(c)) return catalogFamilyByCode.get(c);
-      // Existencia: la familia debe salir del catálogo CODIGOS del Maestro.
-      // No se inventa por descripción.
-      return INE_CODE_FAMILY.get(c) || '';
+      return '';
     };
     // ================================================================
     // PROMEDIO — REGLA MAESTRA (extraída del Excel Maestro)
@@ -266,6 +264,8 @@ self.onmessage = async (e) => {
     };
 
     const applyFixedMasterFormula = (row={}) => {
+      // Única ruta ejecutable: compartida con la interfaz y las pruebas.
+      return maestroFormula.calculateRow(row,formulaParams);
       const rawDoc = String(row.docto ?? row.tipoDocumento ?? '').trim();
       const doc = normalizeDocType(rawDoc);
       const s = Number(row.valorMovto);
@@ -288,6 +288,9 @@ self.onmessage = async (e) => {
     };
 
     const deriveIneFromExistenceDetail = (detailRows, periodo) => {
+      // Única ruta ejecutable: INFO=1, CODIGOS, NC y NO CONTABILIZADO
+      // se resuelven con el mismo motor usado por la app.
+      return maestroFormula.summarize(detailRows,formulaParams,periodo);
       const key=String(periodo||'').trim();
       const agg=new Map(INE_FAMILIES.map(name=>[name,{name,kg:0,neto:0,rows:0,codes:new Set(),sources:new Set()}]));
       const unmapped=[];
@@ -547,7 +550,28 @@ self.onmessage = async (e) => {
           const headerKey=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9$]+/g,'');
           const header=ir.findIndex(r=>{const u=(r||[]).map(headerKey);return u.includes('INFO')&&u.includes('CODIGO')&&u.includes('ITEM')&&u.includes('TOTALDISPONIBLE')&&(u.some(x=>x.startsWith('TOTALDISPONIBLE'))||u.some(x=>x.startsWith('TOTALFISICO')));});
           if(header>=0){const h=(ir[header]||[]).map(headerKey),idx={};h.forEach((v,i)=>{if(v)idx[v]=i});ine.quality={mode:'Registro de Existencia',sourceType:'existencia',headerFound:true,missing:[],range:range||'',emissionDate:emission?.replace(/^.*?:\s*/,'')||''};const summary=[],detail=[];
-            for(let i=header+1;i<ir.length;i++){const r=ir[i]||[],info=String(r[idx['INFO']]??'').trim(),name=String(r[idx['ITEM']]??'').trim();if(!name)continue;const x={name,code:String(r[idx['CODIGO']]??''),item:String(r[idx['ITEM']]??''),docto:String(r[idx['DOCTO']]??'').trim(),folio:normalizeFolioKey(r[idx['FOLIO']]),fecha:r[idx['FECHA']]??'',family:'',valorMovto:n(r[idx['VALORMOVTO']]),disponible:n(r[idx['TOTALDISPONIBLE']]),disponible$:n(r[idx['TOTALDISPONIBLE$']]),saldoAnterior:n(r[idx['SALDOANTERIOR']]),saldoAnterior$:n(r[idx['SALDOANTERIOR$']]),entrada:n(r[idx['ENTRADA']]),salida:n(r[idx['SALIDA']]),entrada$:n(r[idx['ENTRADA$']]),salida$:n(r[idx['SALIDA$']]),reservas:n(r[idx['RESERVAS']]),consignacion:n(r[idx['CONSIGNACION']]),transitoria:n(r[idx['TRANSITORIA']]),totalValorizado$:n(r[idx['TOTALVALORIZADO$']])};const mappedFamily=ineFamilyByCode(x.code,x.name);x.family=mappedFamily||'';if(info==='2')summary.push(x);else if(info==='1')detail.push(x)}
+            for(let i=header+1;i<ir.length;i++){
+              const r=ir[i]||[],info=String(r[idx['INFO']]??'').trim(),name=String(r[idx['ITEM']]??'').trim();
+              if(!name)continue;
+              const at=(key,fallback)=>r[idx[key]??fallback];
+              const x={
+                name,code:String(r[idx['CODIGO']]??''),item:String(r[idx['ITEM']]??''),
+                docto:String(r[idx['DOCTO']]??'').trim(),folio:normalizeFolioKey(r[idx['FOLIO']]),
+                fecha:r[idx['FECHA']]??at('FECHA',11)??'',family:'',valorMovto:n(r[idx['VALORMOVTO']]??at('VALORMOVTO',18)),
+                origenDestino:String(at('ORIGENDESTINO',15)??''),producto:String(at('PRODUCTO',27)??''),
+                detalle:String(at('DETALLE',28)??''),classification:String(at('CLASIFICACION',33)??''),
+                af:n(at('VENTASSACOS',31)),ax:String(at('SACOSGRANEL',49)??''),
+                disponible:n(r[idx['TOTALDISPONIBLE']]),disponible$:n(r[idx['TOTALDISPONIBLE$']]),
+                saldoAnterior:n(r[idx['SALDOANTERIOR']]),saldoAnterior$:n(r[idx['SALDOANTERIOR$']]),
+                entrada:n(r[idx['ENTRADA']]),salida:n(r[idx['SALIDA']]),entrada$:n(r[idx['ENTRADA$']]),salida$:n(r[idx['SALIDA$']]),
+                reservas:n(r[idx['RESERVAS']]),consignacion:n(r[idx['CONSIGNACION']]),transitoria:n(r[idx['TRANSITORIA']]),
+                totalValorizado$:n(r[idx['TOTALVALORIZADO$']])
+              };
+              x.family=ineFamilyByCode(x.code,x.name)||'';
+              const afResult=maestroFormula.calculateAf(x,formulaParams);
+              x.af=afResult.value;x.afRule=afResult.rule;x.ax=maestroFormula.calculateAx(x,formulaParams);
+              if(info==='2')summary.push(x);else if(info==='1')detail.push(x);
+            }
             const agg=new Map(INE_FAMILIES.map(name=>[name,{name,neto:0,kg:0,sourceCodes:new Set()}])),unmapped=[];
             for(const x of summary){const fam=ineFamilyByCode(x.code,x.name);if(!fam){if(x.disponible||x.disponible$)unmapped.push({code:x.code,name:x.name,kg:x.disponible,neto:x.disponible$});continue}const z=agg.get(fam);z.neto+=x.disponible$;z.kg+=x.disponible;if(x.code)z.sourceCodes.add(x.code)}
             const sourceTotalNeto=summary.reduce((a,x)=>a+x.disponible$,0);
@@ -564,7 +588,10 @@ self.onmessage = async (e) => {
             exact.derivedIne=derivedIne;
             exact.masterIneReferenceRequired=false;
             exact.formulaCatalogAvailable=!!derivedIne.available;
-            const sourceColumns={info:'A = Info',code:'B = Código',item:'C = Ítem',valorMovto:'S = Valor Movto',salida:'U = Salida',totalDisponible:'AC = Total Disponible',totalDisponible$:'AG = Total Disponible$',totalValorizado$:'AK = Total Valorizado$',costo:'W = Costo'};const formulaProfile={model:'EXISTENCIA_FISICO_VALORIZADA',summaryFilter:'INFO = 2',stockUnitValue:'Total Disponible$ / Total Disponible',valueColumn:'AG = Total Disponible$',kgColumn:'AC = Total Disponible',total:'suma de 8 familias',harinas:'1+2+3',salesIne:'VP X = NETO / Salida (separado)',masterIneRule:'PROMEDIO INE se genera desde el Registro aplicando la fórmula fija del Maestro: AJ/AM/AN → AQ=AJ+AN → AR=AQ×U → D/E/F → total → Harinas'};const checksum=hashText(JSON.stringify({periodKey:ine.periodo,summaryRows:summary.map(x=>({...x})),detailCount:detail.length}));ine.existenceBase={version:3,baseVersion:3,key:ine.periodo,periodKey:ine.periodo,summaryRows:summary.map(x=>({...x})),detailRows:detail.map(x=>({...x})),familyItems:baseItems.map(x=>({...x,sourceCodes:Array.isArray(x.sourceCodes)?[...x.sourceCodes]:[]})),sourceSheet:regName,range:range||'',emissionDate:emission?.replace(/^.*?:\s*/,'')||'',recordCountSummary:summary.length,recordCountDetail:detail.length,sourceColumns,formulaProfile,derivedIne,checksum};
+            const sourceColumns={info:'A = Info',code:'B = Código',item:'C = Ítem',fecha:'L = Fecha',docto:'N = Docto',folio:'O = Folio',origenDestino:'P = Origen/Destino',valorMovto:'S = Valor Movto',salida:'U = Salida',producto:'AB = Producto',detalle:'AC = Detalle',ventasSacos:'AF = Ventas * Sacos',clasificacion:'AH = Clasificación',sacosGranel:'AX = Sacos/Granel',totalDisponible:'AC = Total Disponible',totalDisponible$:'AG = Total Disponible$',totalValorizado$:'AK = Total Valorizado$',costo:'W = Costo'};
+            const formulaProfile={model:'EXISTENCIA_FISICO_VALORIZADA',engine:maestroFormula.VERSION,summaryFilter:'INFO = 2',stockUnitValue:'Total Disponible$ / Total Disponible',valueColumn:'AG = Total Disponible$',kgColumn:'AC = Total Disponible',total:'suma de 8 familias',harinas:'1+2+3',salesIne:'VP X = NETO / Salida (separado)',masterIneRule:'AJ/AM/AN → AQ=AJ+AN → AR=AQ×U; AF y AX desde CODIGOS'};
+            const checksum=hashText(JSON.stringify({periodKey:ine.periodo,summaryRows:summary.map(x=>({...x})),detailCount:detail.length}));
+            ine.existenceBase={version:4,baseVersion:4,key:ine.periodo,periodKey:ine.periodo,summaryRows:summary.map(x=>({...x})),detailRows:detail.map(x=>({...x})),familyItems:baseItems.map(x=>({...x,sourceCodes:Array.isArray(x.sourceCodes)?[...x.sourceCodes]:[]})),formulaParameters:formulaParams,sourceSheet:regName,range:range||'',emissionDate:emission?.replace(/^.*?:\s*/,'')||'',recordCountSummary:summary.length,recordCountDetail:detail.length,sourceColumns,formulaProfile,derivedIne,checksum};
             Object.assign(ine,exact);
             ine.derivedIne=derivedIne;
             ine.quality.unmapped=unmapped;
@@ -903,12 +930,30 @@ self.onmessage = async (e) => {
     documents.splice(0, documents.length, ...latestFirst(documents));
     guides.splice(0, guides.length, ...latestFirst(guides));
     nc.splice(0, nc.length, ...latestFirst(nc));
+    // V1: indexar facturas una sola vez. La versión anterior hacía invoices.filter()
+    // para CADA cliente, generando una complejidad O(clientes × facturas) que podía
+    // dejar el worker detenido indefinidamente después del 96% en "Finalizando índices locales".
+    // Ahora la búsqueda es O(1) promedio por cliente.
+    const invoiceIndex = new Map();
+    const addInvoiceIndex = (key, inv) => {
+      const k=String(key||'').trim();
+      if(!k) return;
+      const list=invoiceIndex.get(k)||[];
+      list.push(inv);
+      invoiceIndex.set(k,list);
+    };
+    for(const inv of invoices){
+      const rutKey=norm(inv.rut);
+      const nameKey=normName(inv.cliente);
+      if(rutKey) addInvoiceIndex(rutKey,inv);
+      if(nameKey && nameKey!==rutKey) addInvoiceIndex(nameKey,inv);
+    }
     const clients = [...clientsMap.values()].map(c=>{
       const ck=norm(c.rut)||normName(c.nombre); const m=contactMap.get(ck)||{};
       const client={...c,direccion:m.direccion||'',comuna:m.comuna||'',region:m.region||'',contacto:m.contacto||'',telefono:m.telefono||'',email:m.email||'',destinos:[...(destinationMap.get(ck)||[])]};
       const fallbackDestination=[client.direccion,client.comuna,client.region].filter(Boolean).join(', ');
       if (fallbackDestination && !client.destinos.some(x=>normName(x)===normName(fallbackDestination))) client.destinos.push(fallbackDestination);
-      const invs=invoices.filter(inv=>(client.rut && norm(inv.rut)===norm(client.rut)) || (!client.rut && normName(inv.cliente)===normName(client.nombre)));
+      const invs=invoiceIndex.get(ck)||[];
       client.latestPurchase=invs.length?invs[0].fecha:'';
       client.invoiceCount=invs.length;
       client.creditRisk=computeRisk(client,invs);
