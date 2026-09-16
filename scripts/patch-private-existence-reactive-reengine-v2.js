@@ -13,8 +13,10 @@ const outerEnd=s.lastIndexOf('})();');
 if(bridgeStart<0||outerEnd<0||bridgeStart>outerEnd)fail('No se encontró el bridge reactivo V1 al final del artefacto.');
 const bridge=s.slice(bridgeStart,outerEnd);
 s=s.slice(0,bridgeStart)+s.slice(outerEnd);
-const rootEnd=s.lastIndexOf('})();');
-if(rootEnd<0)fail('No se encontró cierre raíz después de mover el bridge.');
+const rootAnchor=s.indexOf('window.__MC_APP_GET_STATE__=()=>state;');
+if(rootAnchor<0)fail('No se encontró el bridge de estado dentro del scope raíz.');
+const rootEnd=s.indexOf('})();',rootAnchor);
+if(rootEnd<0)fail('No se encontró el cierre raíz después del bridge de estado.');
 let safeBridge=bridge.replace('const MARK', 'const MARK_UNUSED');
 
 // Repair month selection: explicit INE selection wins over a remembered Existencia record.
@@ -33,6 +35,9 @@ s=s.slice(0,rootEnd)+safeBridge+'\n'+s.slice(rootEnd);
 s=s.replace("b.addEventListener('click',()=>show(b.dataset.view))","b.addEventListener('click',()=>window.show(b.dataset.view))");
 
 if(/\bstate\.__mcRevision/.test(s.slice(rootEnd+safeBridge.length)))fail('El bridge reactivo quedó fuera del scope raíz.');
+const reactiveIndex=s.indexOf(fixed);
+const privateLiveIndex=s.indexOf('/* MC_PRIVATE_LIVE_REFRESH_V1 */');
+if(privateLiveIndex>=0&&reactiveIndex>privateLiveIndex)fail('El bridge reactivo quedó después del módulo externo de refresco privado.');
 if(!s.includes(fixed))fail('No quedó instalado el bridge V2.');
 if(!s.includes('b.addEventListener(\'click\',()=>window.show(b.dataset.view))'))fail('La navegación no usa window.show.');
 if(!s.includes('months.find(x=>String(x.key)===String(state.ineSelected))||existenceSelected'))fail('No quedó corregida la precedencia del selector INE.');
