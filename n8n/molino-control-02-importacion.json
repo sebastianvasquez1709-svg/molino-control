@@ -1,0 +1,84 @@
+{
+  "name": "Molino Control - 02 Recepción Excel",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "molino-control/importaciones",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "48c9d560-0671-4386-9764-4e3deca7d863",
+      "name": "Recibir solicitud",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-560, 260],
+      "webhookId": "49a07d89-731e-45fc-b855-6dce45112971"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json; const body = input.body ?? input; const required = ['file_name','storage_path','checksum_sha256']; const missing = required.filter(k => !String(body[k] ?? '').trim()); if (missing.length) throw new Error('Faltan campos obligatorios: ' + missing.join(', ')); const checksum = String(body.checksum_sha256).trim().toLowerCase(); if (!/^[a-f0-9]{64}$/.test(checksum)) throw new Error('checksum_sha256 debe contener 64 caracteres hexadecimales.'); const fileName = String(body.file_name).trim(); if (!/\\.(xlsx|xlsm)$/i.test(fileName)) throw new Error('Solo se permiten archivos XLSX o XLSM.'); const storagePath = String(body.storage_path).trim(); if (storagePath.includes('..') || storagePath.startsWith('/')) throw new Error('storage_path inválido.'); return [{ json: { idempotency_key: String(body.idempotency_key || `${checksum}:${storagePath}`), file_name: fileName, storage_path: storagePath, checksum_sha256: checksum, status: 'pendiente', requested_by: body.requested_by || null, metadata: { source: 'molino-control', expected_sheets: ['BASE DE DATOS','LIBRO','GUIAS','CODIGOS'], ...(body.metadata && typeof body.metadata === 'object' ? body.metadata : {}) } } }];"
+      },
+      "id": "c1d78904-4256-4994-a196-f9feb5fb3c52",
+      "name": "Validar solicitud",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-300, 260]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "tableId": "import_jobs",
+        "fieldsUi": {
+          "fieldValues": [
+            {"fieldId": "idempotency_key", "fieldValue": "={{ $json.idempotency_key }}"},
+            {"fieldId": "file_name", "fieldValue": "={{ $json.file_name }}"},
+            {"fieldId": "storage_path", "fieldValue": "={{ $json.storage_path }}"},
+            {"fieldId": "checksum_sha256", "fieldValue": "={{ $json.checksum_sha256 }}"},
+            {"fieldId": "status", "fieldValue": "={{ $json.status }}"},
+            {"fieldId": "requested_by", "fieldValue": "={{ $json.requested_by }}"},
+            {"fieldId": "metadata", "fieldValue": "={{ $json.metadata }}"}
+          ]
+        }
+      },
+      "id": "f5c60b2d-f3d6-421d-a98b-89a13eb7bfb9",
+      "name": "Crear trabajo de importación",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [-20, 260],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REEMPLAZAR_EN_N8N",
+          "name": "Molino Control Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, job_id: $json.id, status: $json.status, message: 'Importación recibida para validación' } }}",
+        "options": {"responseCode": 202}
+      },
+      "id": "b4a9b6e9-e448-4bb7-b3f4-a0409b085688",
+      "name": "Responder a Molino Control",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [260, 260]
+    }
+  ],
+  "connections": {
+    "Recibir solicitud": {"main": [[{"node": "Validar solicitud", "type": "main", "index": 0}]]},
+    "Validar solicitud": {"main": [[{"node": "Crear trabajo de importación", "type": "main", "index": 0}]]},
+    "Crear trabajo de importación": {"main": [[{"node": "Responder a Molino Control", "type": "main", "index": 0}]]}
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "America/Santiago"
+  },
+  "versionId": "b6506892-6d8d-44c9-a9b7-a985594b4078",
+  "meta": {"templateCredsSetupCompleted": false},
+  "tags": []
+}
