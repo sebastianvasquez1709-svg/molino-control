@@ -1,0 +1,72 @@
+{
+  "name": "Molino Control - 01 Prueba Supabase",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "76493b87-bdb7-4fbc-b48d-c6c89c886f6b",
+      "name": "Inicio manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-520, 220]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { source: 'n8n', status: 'ok', payload: { workflow: 'Molino Control - 01 Prueba Supabase', executed_at: new Date().toISOString(), purpose: 'Prueba aislada sin datos operacionales' } } }];"
+      },
+      "id": "c0735c92-c4cd-445a-92e7-acde83cbf85f",
+      "name": "Preparar prueba",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-280, 220]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "tableId": "n8n_connection_tests",
+        "fieldsUi": {
+          "fieldValues": [
+            {"fieldId": "source", "fieldValue": "={{ $json.source }}"},
+            {"fieldId": "status", "fieldValue": "={{ $json.status }}"},
+            {"fieldId": "payload", "fieldValue": "={{ $json.payload }}"}
+          ]
+        }
+      },
+      "id": "80c1e9bc-776c-4a99-bd3b-64ba296da6cb",
+      "name": "Registrar prueba en Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [-20, 220],
+      "credentials": {
+        "supabaseApi": {
+          "id": "REEMPLAZAR_EN_N8N",
+          "name": "Molino Control Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $input.first().json; if (!row.id || row.status !== 'ok') throw new Error('Supabase no confirmó la fila de prueba.'); return [{ json: { ok: true, message: 'Conexión n8n → Supabase validada', test_id: row.id, created_at: row.created_at } }];"
+      },
+      "id": "7bea052a-f36e-401e-9a2c-40f3cd78e9be",
+      "name": "Confirmar conexión",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 220]
+    }
+  ],
+  "connections": {
+    "Inicio manual": {"main": [[{"node": "Preparar prueba", "type": "main", "index": 0}]]},
+    "Preparar prueba": {"main": [[{"node": "Registrar prueba en Supabase", "type": "main", "index": 0}]]},
+    "Registrar prueba en Supabase": {"main": [[{"node": "Confirmar conexión", "type": "main", "index": 0}]]}
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "America/Santiago"
+  },
+  "versionId": "03856db7-f876-48ae-974b-01a01e2b3018",
+  "meta": {"templateCredsSetupCompleted": false},
+  "tags": []
+}
