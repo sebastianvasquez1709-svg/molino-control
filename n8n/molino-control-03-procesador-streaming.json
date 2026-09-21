@@ -1,0 +1,137 @@
+{
+  "name": "Molino Control - 03 Procesador Excel streaming",
+  "nodes": [
+    {
+      "parameters": { "rule": { "interval": [{ "field": "minutes", "minutesInterval": 1 }] } },
+      "id": "2e270093-61d3-45e5-8a94-61a548bd33c2",
+      "name": "Cada minuto",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-900, 240]
+    },
+    {
+      "parameters": { "jsCode": "return [{ json: { worker_id: `n8n-${$execution.id}` } }];" },
+      "id": "6a2bb74d-09b0-4dd9-bb85-b28a0eb638b4",
+      "name": "Crear contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-680, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dadggurateghfumfcshz.supabase.co/rest/v1/rpc/n8n_claim_import_jobs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "apikey", "value": "sb_publishable_MtIFqV5vVxPNwkCxc82yOw_lCe5oFw4" }] },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ p_worker_id: $json.worker_id, p_limit: 1 }) }}",
+        "options": {}
+      },
+      "id": "64bfbb7c-b4b3-48d0-b7c4-73f76e44e3b9",
+      "name": "Tomar trabajo con lease",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-450, 240],
+      "credentials": { "httpHeaderAuth": { "id": "CONFIGURAR_EN_N8N", "name": "Molino Control RPC Token" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json; const jobs = Array.isArray(raw) ? raw : (raw?.id ? [raw] : []); return jobs.map(job => ({ json: { ...job, worker_id: `n8n-${$execution.id}` } }));"
+      },
+      "id": "d293b505-d6cb-4285-861f-8680728b88c8",
+      "name": "Normalizar trabajos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-210, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dadggurateghfumfcshz.supabase.co/functions/v1/n8n-import-file",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "apikey", "value": "sb_publishable_MtIFqV5vVxPNwkCxc82yOw_lCe5oFw4" }] },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ job_id: $json.id }) }}",
+        "options": {}
+      },
+      "id": "a7108cb4-1b53-42bd-af1e-54bcbd1683e8",
+      "name": "Crear URL firmada",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [30, 240],
+      "credentials": { "httpHeaderAuth": { "id": "CONFIGURAR_EN_N8N", "name": "Molino Control RPC Token" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://molino-control.vercel.app/api/n8n-import-parser",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ job_id: $json.job_id, worker_id: `n8n-${$execution.id}`, signed_url: $json.signed_url, expected_checksum_sha256: $json.checksum_sha256, kind: $json.kind }) }}",
+        "options": { "timeout": 300000 }
+      },
+      "id": "ebfdc0f6-d655-44e5-8d59-142313419bf1",
+      "name": "Procesar XLSX por streaming",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [280, 240],
+      "credentials": { "httpHeaderAuth": { "id": "CONFIGURAR_EN_N8N", "name": "Molino Control RPC Token" } }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dadggurateghfumfcshz.supabase.co/rest/v1/rpc/n8n_finish_import_job",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "apikey", "value": "sb_publishable_MtIFqV5vVxPNwkCxc82yOw_lCe5oFw4" }] },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ p_job_id: $json.job_id, p_worker_id: `n8n-${$execution.id}`, p_status: $json.status, p_rows_total: $json.rows_total, p_rows_valid: $json.rows_valid, p_rows_error: $json.rows_error, p_result_summary: $json.summary, p_last_error: null }) }}",
+        "options": {}
+      },
+      "id": "93457965-bbd1-4df3-b1c2-75d572222d8e",
+      "name": "Cerrar validación",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [540, 240],
+      "credentials": { "httpHeaderAuth": { "id": "CONFIGURAR_EN_N8N", "name": "Molino Control RPC Token" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json; const row = Array.isArray(raw) ? raw[0] : raw; if (!row?.id) throw new Error('Supabase no confirmó el cierre del trabajo.'); return [{ json: { ok: true, job_id: row.id, status: row.status, finished_at: row.finished_at, publication_performed: false } }];"
+      },
+      "id": "775a64af-b15b-468e-8670-86f1032bb639",
+      "name": "Confirmar staging",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [790, 240]
+    }
+  ],
+  "connections": {
+    "Cada minuto": { "main": [[{ "node": "Crear contexto", "type": "main", "index": 0 }]] },
+    "Crear contexto": { "main": [[{ "node": "Tomar trabajo con lease", "type": "main", "index": 0 }]] },
+    "Tomar trabajo con lease": { "main": [[{ "node": "Normalizar trabajos", "type": "main", "index": 0 }]] },
+    "Normalizar trabajos": { "main": [[{ "node": "Crear URL firmada", "type": "main", "index": 0 }]] },
+    "Crear URL firmada": { "main": [[{ "node": "Procesar XLSX por streaming", "type": "main", "index": 0 }]] },
+    "Procesar XLSX por streaming": { "main": [[{ "node": "Cerrar validación", "type": "main", "index": 0 }]] },
+    "Cerrar validación": { "main": [[{ "node": "Confirmar staging", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": { "executionOrder": "v1", "saveManualExecutions": true, "timezone": "America/Santiago" },
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}

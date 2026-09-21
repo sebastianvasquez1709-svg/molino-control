@@ -32,6 +32,8 @@ node --check public/reports-sacos-granel-professional-v1.js
 node --check public/clients-enhanced-v1.js
 node --check public/dashboard-macro-enhanced-v1.js
 node --check public/report-rpc-boot-v2.js
+node --check public/molino-automation-import.js
+node --check api/n8n-import-parser.js
 
 node - <<'NODE'
 const fs=require('fs');
@@ -40,6 +42,7 @@ const app=fs.readFileSync('public/app.js','utf8');
 const index=fs.readFileSync('public/index.html','utf8');
 const monthly=fs.readFileSync('public/existencia-reportes-mensuales.js','utf8');
 const cloud=fs.readFileSync('public/molino-cloud-state-v2.js','utf8');
+const automation=fs.readFileSync('public/molino-automation-import.js','utf8');
 
 assert(app.includes('function renderInvoices(){'),'Facturas no está disponible.');
 assert(app.includes('function renderBoletas(){'),'Boletas no está disponible.');
@@ -50,6 +53,10 @@ assert(index.includes('/existencia-reportes-mensuales.js'),'Falta cargar Informe
 assert(monthly.includes('EXISTENCIA_REPORTES_MODELO_V2'),'No llegó Informes Mensuales V2 a producción.');
 assert(monthly.includes('MolinoCloudStateV2'),'Informes mensuales no está conectado al historial durable.');
 assert(cloud.includes("const RPC='molino_existence_state_local'"),'Falta RPC durable de Existencia.');
+assert(app.includes('N8N_IMPORT_PANEL_V1'),'Falta ruta de Automatización n8n.');
+assert(index.includes('/molino-automation-import.js'),'Falta cargar el panel de Automatización n8n.');
+assert(automation.includes('molino_enqueue_import'),'El panel no encola por RPC autenticada.');
+assert(!automation.includes('x-molino-n8n-token'),'El bundle público contiene una referencia prohibida al token n8n.');
 assert(!monthly.includes("window.open('','_blank'"),'Persistió impresión por popup.');
 assert(monthly.includes("document.createElement('iframe')"),'Falta impresión aislada por iframe.');
 assert(monthly.includes("BIG BAG 800 KG → SALIDA / 800"),'Falta regla Big Bag /800.');

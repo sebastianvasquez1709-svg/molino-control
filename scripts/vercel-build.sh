@@ -20,6 +20,7 @@ check_core(){
   node --check reports-sacos-granel-professional-v1.js
   node --check clients-enhanced-v1.js
   node --check dashboard-macro-enhanced-v1.js
+  node --check molino-automation-import.js
   node --check panel-macro-pro-v3.js
   node --check panel-macro-pro-v4.js
   node --check panel-macro-pro-v5.js
@@ -56,6 +57,7 @@ run_patch scripts/patch-dispatch-bridge-v1.js
 run_patch scripts/patch-reports-v11-safe-v1.js
 run_patch scripts/patch-reports-professional-v1.js
 run_patch scripts/patch-macro-state-bridge-v1.js
+run_patch scripts/patch-n8n-import-panel-v1.js
 
 check_fragment 'counter worker' scripts/counter-worker-frag.js
 check_fragment 'existence reports' scripts/existence-sacogranel-reports-v1.jsfrag
@@ -76,6 +78,7 @@ const macroV5=fs.readFileSync('panel-macro-pro-v5.js','utf8');
 const macroV6=fs.readFileSync('panel-macro-pro-v6.js','utf8');
 const macroPremium=fs.readFileSync('panel-macro-premium-v2.css','utf8');
 const globalPremium=fs.readFileSync('global-theme-premium-v2.css','utf8');
+const automation=fs.readFileSync('molino-automation-import.js','utf8');
 const guides=fs.readFileSync('scripts/guides-renderer.jsfrag','utf8');
 const fast=fs.readFileSync('scripts/fast-docs-injection.jsfrag','utf8');
 const assert=(ok,msg)=>{if(!ok)throw new Error(msg)};
@@ -107,6 +110,9 @@ assert(macroV6.includes('function productTable(items,total)'),'Falta la tabla co
 assert(macroPremium.includes('mcPremiumDraw')&&macroPremium.includes('prefers-reduced-motion'),'Movimiento Premium sin protección de accesibilidad.');
 assert(globalPremium.includes('filter:none!important'),'El logo corporativo no está protegido de transformaciones.');
 assert(app.includes('MC_APP_STATE_BRIDGE_V1'),'Falta puente de estado de la app.');
+assert(app.includes('N8N_IMPORT_PANEL_V1'),'Falta navegación segura de Automatización n8n.');
+assert(automation.includes('molino_enqueue_import'),'El panel n8n no usa la cola autenticada.');
+assert(!automation.includes('x-molino-n8n-token'),'El panel público no puede contener el token de n8n.');
 assert(guides.includes('const csvCell=')&&guides.includes('const csvLine='),'Guías no usa helpers CSV seguros.');
 assert((app.match(/FAST DOCUMENT MODULES V1/g)||[]).length===1,'La inyección FAST DOCUMENTS quedó duplicada.');
 assert((app.match(/MolinoDispatchBridge/g)||[]).length===1,'El bridge de Despachos quedó duplicado.');

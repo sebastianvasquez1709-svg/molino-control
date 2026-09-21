@@ -1,0 +1,17 @@
+{
+  "name": "molino-control",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "exceljs": "4.4.0"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
+  },
+  "scripts": {
+    "check:n8n": "node --check api/n8n-import-parser.js && node --check molino-automation-import.js && node --check scripts/patch-n8n-import-panel-v1.js"
+  }
+}

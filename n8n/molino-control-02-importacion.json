@@ -1,5 +1,5 @@
 {
-  "name": "Molino Control - 02 Recepción Excel",
+  "name": "Molino Control - 02 Recepción Excel RPC",
   "nodes": [
     {
       "parameters": {
@@ -12,12 +12,11 @@
       "name": "Recibir solicitud",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
-      "position": [-560, 260],
-      "webhookId": "49a07d89-731e-45fc-b855-6dce45112971"
+      "position": [-560, 260]
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first().json; const body = input.body ?? input; const required = ['file_name','storage_path','checksum_sha256']; const missing = required.filter(k => !String(body[k] ?? '').trim()); if (missing.length) throw new Error('Faltan campos obligatorios: ' + missing.join(', ')); const checksum = String(body.checksum_sha256).trim().toLowerCase(); if (!/^[a-f0-9]{64}$/.test(checksum)) throw new Error('checksum_sha256 debe contener 64 caracteres hexadecimales.'); const fileName = String(body.file_name).trim(); if (!/\\.(xlsx|xlsm)$/i.test(fileName)) throw new Error('Solo se permiten archivos XLSX o XLSM.'); const storagePath = String(body.storage_path).trim(); if (storagePath.includes('..') || storagePath.startsWith('/')) throw new Error('storage_path inválido.'); return [{ json: { idempotency_key: String(body.idempotency_key || `${checksum}:${storagePath}`), file_name: fileName, storage_path: storagePath, checksum_sha256: checksum, status: 'pendiente', requested_by: body.requested_by || null, metadata: { source: 'molino-control', expected_sheets: ['BASE DE DATOS','LIBRO','GUIAS','CODIGOS'], ...(body.metadata && typeof body.metadata === 'object' ? body.metadata : {}) } } }];"
+        "jsCode": "const input = $input.first().json; const body = input.body ?? input; const required = ['file_name','storage_path','checksum_sha256']; const missing = required.filter(k => !String(body[k] ?? '').trim()); if (missing.length) throw new Error('Faltan campos obligatorios: ' + missing.join(', ')); const checksum = String(body.checksum_sha256).trim().toLowerCase(); if (!/^[a-f0-9]{64}$/.test(checksum)) throw new Error('checksum_sha256 debe contener 64 caracteres hexadecimales.'); const fileName = String(body.file_name).trim(); if (!/\\.(xlsx|xlsm)$/i.test(fileName)) throw new Error('Solo se permiten archivos XLSX o XLSM.'); const storagePath = String(body.storage_path).trim(); if (storagePath.includes('..') || storagePath.startsWith('/')) throw new Error('storage_path inválido.'); return [{ json: { idempotency_key: String(body.idempotency_key || `${checksum}:${storagePath}`), file_name: fileName, storage_path: storagePath, checksum_sha256: checksum, requested_by: body.requested_by || null, metadata: { source: 'molino-control', expected_sheets: ['BASE DE DATOS','LIBRO','GUIAS','CODIGOS'], ...(body.metadata && typeof body.metadata === 'object' ? body.metadata : {}) } } }];"
       },
       "id": "c1d78904-4256-4994-a196-f9feb5fb3c52",
       "name": "Validar solicitud",
@@ -27,37 +26,39 @@
     },
     {
       "parameters": {
-        "operation": "create",
-        "tableId": "import_jobs",
-        "fieldsUi": {
-          "fieldValues": [
-            {"fieldId": "idempotency_key", "fieldValue": "={{ $json.idempotency_key }}"},
-            {"fieldId": "file_name", "fieldValue": "={{ $json.file_name }}"},
-            {"fieldId": "storage_path", "fieldValue": "={{ $json.storage_path }}"},
-            {"fieldId": "checksum_sha256", "fieldValue": "={{ $json.checksum_sha256 }}"},
-            {"fieldId": "status", "fieldValue": "={{ $json.status }}"},
-            {"fieldId": "requested_by", "fieldValue": "={{ $json.requested_by }}"},
-            {"fieldId": "metadata", "fieldValue": "={{ $json.metadata }}"}
+        "method": "POST",
+        "url": "https://dadggurateghfumfcshz.supabase.co/rest/v1/rpc/n8n_create_import_job",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "sb_publishable_MtIFqV5vVxPNwkCxc82yOw_lCe5oFw4" }
           ]
-        }
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ p_idempotency_key: $json.idempotency_key, p_file_name: $json.file_name, p_storage_path: $json.storage_path, p_checksum_sha256: $json.checksum_sha256, p_requested_by: $json.requested_by, p_metadata: $json.metadata }) }}",
+        "options": {}
       },
       "id": "f5c60b2d-f3d6-421d-a98b-89a13eb7bfb9",
-      "name": "Crear trabajo de importación",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
+      "name": "Crear trabajo limitado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [-20, 260],
       "credentials": {
-        "supabaseApi": {
-          "id": "REEMPLAZAR_EN_N8N",
-          "name": "Molino Control Supabase"
+        "httpHeaderAuth": {
+          "id": "CONFIGURAR_EN_N8N",
+          "name": "Molino Control RPC Token"
         }
       }
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { ok: true, job_id: $json.id, status: $json.status, message: 'Importación recibida para validación' } }}",
-        "options": {"responseCode": 202}
+        "responseBody": "={{ (() => { const row = Array.isArray($json) ? $json[0] : $json; return { ok: true, job_id: row.id, status: row.status, message: 'Importación recibida para validación' }; })() }}",
+        "options": { "responseCode": 202 }
       },
       "id": "b4a9b6e9-e448-4bb7-b3f4-a0409b085688",
       "name": "Responder a Molino Control",
@@ -67,9 +68,9 @@
     }
   ],
   "connections": {
-    "Recibir solicitud": {"main": [[{"node": "Validar solicitud", "type": "main", "index": 0}]]},
-    "Validar solicitud": {"main": [[{"node": "Crear trabajo de importación", "type": "main", "index": 0}]]},
-    "Crear trabajo de importación": {"main": [[{"node": "Responder a Molino Control", "type": "main", "index": 0}]]}
+    "Recibir solicitud": { "main": [[{ "node": "Validar solicitud", "type": "main", "index": 0 }]] },
+    "Validar solicitud": { "main": [[{ "node": "Crear trabajo limitado", "type": "main", "index": 0 }]] },
+    "Crear trabajo limitado": { "main": [[{ "node": "Responder a Molino Control", "type": "main", "index": 0 }]] }
   },
   "pinData": {},
   "active": false,
@@ -78,7 +79,6 @@
     "saveManualExecutions": true,
     "timezone": "America/Santiago"
   },
-  "versionId": "b6506892-6d8d-44c9-a9b7-a985594b4078",
-  "meta": {"templateCredsSetupCompleted": false},
+  "meta": { "templateCredsSetupCompleted": false },
   "tags": []
 }

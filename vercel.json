@@ -2,6 +2,11 @@
   "version": 2,
   "buildCommand": "sh scripts/vercel-build-reingenieria-v1.sh",
   "outputDirectory": "public",
+  "functions": {
+    "api/n8n-import-parser.js": {
+      "maxDuration": 300
+    }
+  },
   "rewrites": [
     { "source": "/", "destination": "/index-auto.html" },
     { "source": "/cloud", "destination": "/cloud.html" },
