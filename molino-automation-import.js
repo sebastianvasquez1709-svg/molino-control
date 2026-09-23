@@ -84,8 +84,8 @@
       renderJobs(Array.isArray(data) ? data : []);
     } catch (error) {
       const host = document.getElementById('automationJobs');
-      if (host) host.innerHTML = `<div class="status warn"><b>Backend de staging pendiente.</b> ${esc(error?.message || 'No se pudo consultar la cola.')}</div>`;
-      if (!quiet) setMessage('La interfaz está lista; falta aplicar la migración segura para habilitar la cola.', 'warn');
+      if (host) host.innerHTML = `<div class="status warn"><b>No se pudo consultar la cola.</b> ${esc(error?.message || 'No se pudo consultar la cola.')}</div>`;
+      if (!quiet) setMessage('No se pudo consultar la cola. Verifica tu sesión de administrador y vuelve a intentar.', 'warn');
     } finally {
       if (refresh) refresh.disabled = false;
       scheduleRefresh();

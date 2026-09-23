@@ -1,14 +1,14 @@
 'use strict';
 
 const ExcelJS = require('exceljs');
-const { createHash } = require('node:crypto');
+const { createHash, randomUUID } = require('node:crypto');
 const { createWriteStream } = require('node:fs');
-const { unlink } = require('node:fs/promises');
+const { unlink, open } = require('node:fs/promises');
 const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 
 const SUPABASE_URL = 'https://dadggurateghfumfcshz.supabase.co';
-const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_MtIFqV5vVxPNwkCxc82yOw_lCe5oFw4';
+const GATEWAY_URL = `${SUPABASE_URL}/functions/v1/molino-n8n-trigger`;
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const MAX_SUBSTANTIVE_ROWS = 100000;
 const STAGE_BATCH_SIZE = 200;
@@ -118,21 +118,17 @@ function safeHeader(value, letter, used) {
 }
 
 async function rpc(name, body, token) {
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
-    method: 'POST',
-    headers: {
-      apikey: SUPABASE_PUBLISHABLE_KEY,
-      'content-type': 'application/json',
-      'x-molino-n8n-token': token,
-    },
-    body: JSON.stringify(body),
+  const actions = { n8n_import_file_context: 'file', n8n_stage_import_rows: 'stage',
+    n8n_append_import_errors: 'findings', n8n_heartbeat_import_job: 'heartbeat' };
+  if (!actions[name]) throw new Error('unsupported_gateway_action');
+  const response = await fetch(GATEWAY_URL, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-molino-n8n-token': token },
+    body: JSON.stringify({ action: actions[name], params: body }),
+    signal: AbortSignal.timeout(30000), redirect: 'error',
   });
-  if (!response.ok) {
-    const detail = (await response.text()).slice(0, 500);
-    throw new Error(`${name} failed (${response.status}): ${detail}`);
-  }
-  const text = await response.text();
-  return text ? JSON.parse(text) : null;
+  const result = await response.json().catch(() => null);
+  if (!response.ok || result?.ok !== true) throw new Error(`gateway_${response.status}_${result?.error || 'unavailable'}`);
+  return result.data;
 }
 
 async function downloadVerifiedFile(signedUrl, expectedChecksum, filePath) {
@@ -140,11 +136,11 @@ async function downloadVerifiedFile(signedUrl, expectedChecksum, filePath) {
   if (url.protocol !== 'https:' || url.hostname !== 'dadggurateghfumfcshz.supabase.co') {
     throw new Error('signed URL host is not allowed');
   }
-  if (!url.pathname.includes('/storage/v1/object/sign/excel-imports/')) {
+  if (url.username || url.password || url.port || !url.pathname.startsWith('/storage/v1/object/sign/excel-imports/')) {
     throw new Error('signed URL does not belong to excel-imports');
   }
 
-  const response = await fetch(url, { redirect: 'error' });
+  const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(60000) });
   if (!response.ok || !response.body) throw new Error(`file download failed (${response.status})`);
 
   const hash = createHash('sha256');
@@ -163,10 +159,45 @@ async function downloadVerifiedFile(signedUrl, expectedChecksum, filePath) {
   return bytes;
 }
 
+async function validateArchive(filePath) {
+  const file = await open(filePath, 'r');
+  try {
+    const size = (await file.stat()).size;
+    if (size < 22 || size > MAX_FILE_BYTES) throw new Error('invalid_xlsx_size');
+    const tail = Buffer.alloc(Math.min(size, 65557));
+    await file.read(tail, 0, tail.length, size-tail.length);
+    const end = tail.lastIndexOf(Buffer.from([0x50,0x4b,0x05,0x06]));
+    if (end < 0 || end+22 > tail.length || end+22+tail.readUInt16LE(end+20)!==tail.length) throw new Error('xlsx_truncated_or_invalid');
+    const entries=tail.readUInt16LE(end+10), directorySize=tail.readUInt32LE(end+12), offset=tail.readUInt32LE(end+16);
+    if (entries<1 || entries>5000 || directorySize>2*1024*1024 || offset+directorySize>size-tail.length+end) throw new Error('xlsx_archive_limits');
+    const directory=Buffer.alloc(directorySize); await file.read(directory,0,directorySize,offset);
+    let cursor=0,total=0; const names=new Set();
+    for(let i=0;i<entries;i++) {
+      if(cursor+46>directory.length || directory.readUInt32LE(cursor)!==0x02014b50) throw new Error('invalid_xlsx_directory');
+      const flags=directory.readUInt16LE(cursor+8),method=directory.readUInt16LE(cursor+10),uncompressed=directory.readUInt32LE(cursor+24);
+      const n=directory.readUInt16LE(cursor+28),extra=directory.readUInt16LE(cursor+30),comment=directory.readUInt16LE(cursor+32);
+      if(cursor+46+n+extra+comment>directory.length) throw new Error('invalid_xlsx_directory');
+      const name=directory.subarray(cursor+46,cursor+46+n).toString('utf8');
+      if((flags&1) || ![0,8].includes(method) || name.split('/').includes('..')) throw new Error('unsupported_xlsx_archive');
+      total+=uncompressed;
+      if(total>512*1024*1024 || (name==='xl/sharedStrings.xml' && uncompressed>64*1024*1024)) throw new Error('xlsx_expansion_limit');
+      names.add(name); cursor+=46+n+extra+comment;
+    }
+    if(!names.has('[Content_Types].xml') || !names.has('xl/workbook.xml')) throw new Error('not_an_xlsx_workbook');
+  } finally { await file.close(); }
+}
+
 function rowCells(row, maxColumns) {
   const cells = [];
   row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    if (colNumber <= maxColumns) cells.push({ colNumber, value: cell.value });
+    if (colNumber <= maxColumns) {
+      let value = cell.value;
+      // ExcelJS 4.4.0 cell.value omits falsy formula results. cell.result retains them.
+      if (cell.type === ExcelJS.ValueType.Formula && cell.result !== undefined) {
+        value = { ...value, result: cell.result };
+      }
+      cells.push({ colNumber, value });
+    }
   });
   return cells;
 }
@@ -195,11 +226,13 @@ async function flushStage(batch, jobId, workerId, token) {
     p_worker_id: workerId,
     p_rows: batch,
   }, token);
+  if (Number(count) !== batch.length) throw new Error('incomplete_stage_batch');
   batch.length = 0;
-  return Number(count || 0);
+  return Number(count);
 }
 
 async function parseWorkbook({ filePath, kind, jobId, workerId, token }) {
+  await validateArchive(filePath);
   const sheetStats = {};
   const seenSheets = new Set();
   const formulaErrors = new Map();
@@ -245,7 +278,7 @@ async function parseWorkbook({ filePath, kind, jobId, workerId, token }) {
         for (const cell of cells) {
           const code = errorValue(
             cell.value,
-            businessSubstantive && sheetName === 'LIBRO',
+            businessSubstantive,
           );
           if (!code) continue;
           const severity = sheetName === 'LIBRO' ? 'warning' : 'error';
@@ -293,10 +326,11 @@ async function parseWorkbook({ filePath, kind, jobId, workerId, token }) {
             stagedRows += await flushStage(stageBatch, jobId, workerId, token);
             batchesSinceHeartbeat += 1;
             if (batchesSinceHeartbeat >= 10) {
-              await rpc('n8n_heartbeat_import_job', {
+              const alive = await rpc('n8n_heartbeat_import_job', {
                 p_job_id: jobId,
                 p_worker_id: workerId,
               }, token);
+              if (alive !== true) throw new Error('lease_not_active');
               batchesSinceHeartbeat = 0;
             }
           }
@@ -384,6 +418,9 @@ async function parseWorkbook({ filePath, kind, jobId, workerId, token }) {
         error_groups: findings.filter(item => item.severity === 'error').length,
         fatal_groups: findings.filter(item => item.severity === 'fatal').length,
       },
+      validation_scope: 'structure-and-cached-cell-errors',
+      formulas_recalculated: false,
+      business_rules_verified: false,
       publication_performed: false,
     },
   };
@@ -403,36 +440,24 @@ module.exports = async function handler(req, res) {
 
   const jobId = String(body.job_id || '').trim();
   const workerId = String(body.worker_id || '').trim();
-  const checksum = String(body.expected_checksum_sha256 || '').trim().toLowerCase();
-  const kind = String(body.kind || 'maestro').trim().toLowerCase();
-  const signedUrl = String(body.signed_url || '').trim();
-  if (!/^[0-9a-f-]{36}$/i.test(jobId) || !workerId || workerId.length > 200) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId)
+      || !workerId || workerId.length > 200) {
     return reply(res, 400, { ok: false, error: 'invalid_job_context' });
   }
-  if (!/^[0-9a-f]{64}$/.test(checksum) || !['maestro', 'existencia'].includes(kind)) {
-    return reply(res, 400, { ok: false, error: 'invalid_file_context' });
-  }
-
+  const filePath = `/tmp/molino-${jobId}-${randomUUID()}.xlsx`;
   try {
-    await rpc('n8n_authorize_request', {}, token);
-  } catch {
-    return reply(res, 401, { ok: false, error: 'invalid_token' });
-  }
-
-  const filePath = `/tmp/molino-${jobId}.xlsx`;
-  try {
-    const fileBytes = await downloadVerifiedFile(signedUrl, checksum, filePath);
-    const result = await parseWorkbook({ filePath, kind, jobId, workerId, token });
-    return reply(res, 200, {
-      ok: true,
-      job_id: jobId,
-      file_bytes: fileBytes,
-      ...result,
-    });
+    // The server chooses the file, hash and import type from the leased job.
+    // Neither a caller-supplied URL nor a caller-supplied checksum is trusted.
+    const context = await rpc('n8n_import_file_context', {p_job_id: jobId, p_worker_id: workerId}, token);
+    if (!context || !/^[0-9a-f]{64}$/.test(context.checksum_sha256)
+        || !['maestro','existencia'].includes(context.kind)) throw new Error('invalid_file_context');
+    const fileBytes = await downloadVerifiedFile(context.signed_url, context.checksum_sha256, filePath);
+    const result = await parseWorkbook({ filePath, kind: context.kind, jobId, workerId, token });
+    return reply(res, 200, { ok: true, job_id: jobId, file_bytes: fileBytes, ...result });
   } catch (error) {
     console.error('n8n import parser failed', {
       job_id: jobId,
-      message: error instanceof Error ? error.message : String(error),
+      code: 'parser_failed',
     });
     return reply(res, 502, { ok: false, error: 'parser_failed' });
   } finally {
@@ -446,4 +471,6 @@ module.exports._internals = Object.freeze({
   flatValue,
   errorValue,
   isBusinessCell,
+  downloadVerifiedFile,
+  validateArchive,
 });

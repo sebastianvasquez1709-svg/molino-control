@@ -1,75 +1,146 @@
 {
-  "name": "Molino Control - 03 Procesador Excel streaming",
+  "name": "Molino Control - 03 Importación segura Excel",
   "nodes": [
     {
-      "parameters": { "rule": { "interval": [{ "field": "minutes", "minutesInterval": 1 }] } },
-      "id": "2e270093-61d3-45e5-8a94-61a548bd33c2",
-      "name": "Cada minuto",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.2,
-      "position": [-900, 240]
+      "id": "fe191eff-e06c-4647-b10d-61fde01ae57f",
+      "name": "Ejecutar prueba",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -880,
+        100
+      ],
+      "parameters": {}
     },
     {
-      "parameters": { "jsCode": "return [{ json: { worker_id: `n8n-${$execution.id}` } }];" },
-      "id": "6a2bb74d-09b0-4dd9-bb85-b28a0eb638b4",
+      "id": "24b47dba-65b3-4704-ae6c-53fd8caaf0b5",
+      "name": "Cada 30 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -880,
+        310
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "9915ec82-a944-4c99-82c1-dc99863231e2",
       "name": "Crear contexto",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-680, 240]
+      "position": [
+        -640,
+        200
+      ],
+      "parameters": {
+        "jsCode": "return [{json:{worker_id:`n8n-${$workflow.id || 'manual'}-${$execution.id}`}}];"
+      }
     },
     {
+      "id": "aeff256f-5d92-481c-a28b-ac2ce3aea357",
+      "name": "Comprobar conexión",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -400,
+        200
+      ],
       "parameters": {
         "method": "POST",
-        "url": "https://dadggurateghfumfcshz.supabase.co/rest/v1/rpc/n8n_claim_import_jobs",
+        "url": "https://dadggurateghfumfcshz.supabase.co/functions/v1/molino-n8n-trigger",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [{ "name": "apikey", "value": "sb_publishable_MtIFqV5vVxPNwkCxc82yOw_lCe5oFw4" }] },
         "sendBody": true,
         "contentType": "raw",
         "rawContentType": "application/json",
-        "body": "={{ JSON.stringify({ p_worker_id: $json.worker_id, p_limit: 1 }) }}",
-        "options": {}
+        "body": "={{ JSON.stringify({ action: \"health\", params: {} }) }}",
+        "options": {
+          "timeout": 45000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
       },
-      "id": "64bfbb7c-b4b3-48d0-b7c4-73f76e44e3b9",
-      "name": "Tomar trabajo con lease",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-450, 240],
-      "credentials": { "httpHeaderAuth": { "id": "CONFIGURAR_EN_N8N", "name": "Molino Control RPC Token" } }
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lFukJttBNR46Wnyg",
+          "name": "Molino Control RPC Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
     },
     {
+      "id": "fdfcd8c3-fd80-4132-a1c8-b5ea66391719",
+      "name": "Tomar trabajo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -160,
+        200
+      ],
       "parameters": {
-        "jsCode": "const raw = $input.first().json; const jobs = Array.isArray(raw) ? raw : (raw?.id ? [raw] : []); return jobs.map(job => ({ json: { ...job, worker_id: `n8n-${$execution.id}` } }));"
+        "method": "POST",
+        "url": "https://dadggurateghfumfcshz.supabase.co/functions/v1/molino-n8n-trigger",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ action: \"claim\", params: {p_worker_id:$('Crear contexto').first().json.worker_id,p_limit:1} }) }}",
+        "options": {
+          "timeout": 45000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
       },
-      "id": "d293b505-d6cb-4285-861f-8680728b88c8",
-      "name": "Normalizar trabajos",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lFukJttBNR46Wnyg",
+          "name": "Molino Control RPC Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "b9bc014e-0140-4303-96ed-b4f226928101",
+      "name": "Trabajo disponible",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-210, 240]
+      "position": [
+        80,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json; if(r.ok!==true||!Array.isArray(r.data)) throw new Error('La cola no confirmó una respuesta válida.'); if(r.data.length>1) throw new Error('Solo se permite un trabajo por ejecución.'); return r.data.map(j=>({json:{job_id:j.id,file_name:j.file_name,attempt_count:j.attempt_count,worker_id:$('Crear contexto').first().json.worker_id}}));"
+      }
     },
     {
-      "parameters": {
-        "method": "POST",
-        "url": "https://dadggurateghfumfcshz.supabase.co/functions/v1/n8n-import-file",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [{ "name": "apikey", "value": "sb_publishable_MtIFqV5vVxPNwkCxc82yOw_lCe5oFw4" }] },
-        "sendBody": true,
-        "contentType": "raw",
-        "rawContentType": "application/json",
-        "body": "={{ JSON.stringify({ job_id: $json.id }) }}",
-        "options": {}
-      },
-      "id": "a7108cb4-1b53-42bd-af1e-54bcbd1683e8",
-      "name": "Crear URL firmada",
+      "id": "6b2b4266-ff3c-4a7f-8f14-93cd03822517",
+      "name": "Procesar Excel",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [30, 240],
-      "credentials": { "httpHeaderAuth": { "id": "CONFIGURAR_EN_N8N", "name": "Molino Control RPC Token" } }
-    },
-    {
+      "position": [
+        320,
+        200
+      ],
       "parameters": {
         "method": "POST",
         "url": "https://molino-control.vercel.app/api/n8n-import-parser",
@@ -78,60 +149,332 @@
         "sendBody": true,
         "contentType": "raw",
         "rawContentType": "application/json",
-        "body": "={{ JSON.stringify({ job_id: $json.job_id, worker_id: `n8n-${$execution.id}`, signed_url: $json.signed_url, expected_checksum_sha256: $json.checksum_sha256, kind: $json.kind }) }}",
-        "options": { "timeout": 300000 }
+        "body": "={{ JSON.stringify({job_id:$json.job_id,worker_id:$json.worker_id}) }}",
+        "options": {
+          "timeout": 300000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
       },
-      "id": "ebfdc0f6-d655-44e5-8d59-142313419bf1",
-      "name": "Procesar XLSX por streaming",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [280, 240],
-      "credentials": { "httpHeaderAuth": { "id": "CONFIGURAR_EN_N8N", "name": "Molino Control RPC Token" } }
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lFukJttBNR46Wnyg",
+          "name": "Molino Control RPC Token"
+        }
+      },
+      "onError": "continueErrorOutput"
     },
     {
+      "id": "95d3b7fc-a84b-479c-83a4-75f65630cffb",
+      "name": "Validar respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        100
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json; const j=$('Trabajo disponible').first().json; if(r.ok!==true||r.job_id!==j.job_id||!['validado','rechazado'].includes(r.status)) throw new Error('Respuesta inválida del procesador.'); for(const k of ['rows_total','rows_valid','rows_error']) if(!Number.isInteger(r[k])||r[k]<0) throw new Error('Contadores inválidos.'); if(r.rows_total!==r.rows_valid+r.rows_error||r.summary?.publication_performed!==false) throw new Error('Resultado inconsistente.'); return [{json:{...r,worker_id:j.worker_id}}];"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "b45fd658-637b-4dcf-9bc1-c0229677f13a",
+      "name": "Guardar resultado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        100
+      ],
       "parameters": {
         "method": "POST",
-        "url": "https://dadggurateghfumfcshz.supabase.co/rest/v1/rpc/n8n_finish_import_job",
+        "url": "https://dadggurateghfumfcshz.supabase.co/functions/v1/molino-n8n-trigger",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [{ "name": "apikey", "value": "sb_publishable_MtIFqV5vVxPNwkCxc82yOw_lCe5oFw4" }] },
         "sendBody": true,
         "contentType": "raw",
         "rawContentType": "application/json",
-        "body": "={{ JSON.stringify({ p_job_id: $json.job_id, p_worker_id: `n8n-${$execution.id}`, p_status: $json.status, p_rows_total: $json.rows_total, p_rows_valid: $json.rows_valid, p_rows_error: $json.rows_error, p_result_summary: $json.summary, p_last_error: null }) }}",
-        "options": {}
+        "body": "={{ JSON.stringify({ action: \"finish\", params: {p_job_id:$json.job_id,p_worker_id:$json.worker_id,p_status:$json.status,p_rows_total:$json.rows_total,p_rows_valid:$json.rows_valid,p_rows_error:$json.rows_error,p_result_summary:$json.summary,p_last_error:null} }) }}",
+        "options": {
+          "timeout": 45000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
       },
-      "id": "93457965-bbd1-4df3-b1c2-75d572222d8e",
-      "name": "Cerrar validación",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [540, 240],
-      "credentials": { "httpHeaderAuth": { "id": "CONFIGURAR_EN_N8N", "name": "Molino Control RPC Token" } }
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lFukJttBNR46Wnyg",
+          "name": "Molino Control RPC Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
     },
     {
-      "parameters": {
-        "jsCode": "const raw = $input.first().json; const row = Array.isArray(raw) ? raw[0] : raw; if (!row?.id) throw new Error('Supabase no confirmó el cierre del trabajo.'); return [{ json: { ok: true, job_id: row.id, status: row.status, finished_at: row.finished_at, publication_performed: false } }];"
-      },
-      "id": "775a64af-b15b-468e-8670-86f1032bb639",
-      "name": "Confirmar staging",
+      "id": "f05ef16a-053f-434d-876f-bce87beda226",
+      "name": "Resultado verificable",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [790, 240]
+      "position": [
+        1040,
+        100
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;const j=r.data?.[0];if(r.ok!==true||!j?.id||!j.finished_at)throw new Error('No se confirmó el cierre.');return [{json:{ok:true,job_id:j.id,status:j.status,finished_at:j.finished_at,publication_performed:false,detalle:j.status==='rechazado'?'Archivo retenido por validación. Revisar import_errors.':'Validación estructural terminada. Revisión de negocio pendiente.'}}];"
+      }
+    },
+    {
+      "id": "51f6eae6-d240-4fd2-97f7-f87af8f562df",
+      "name": "Preparar recuperación",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        360
+      ],
+      "parameters": {
+        "jsCode": "const j=$('Trabajo disponible').first().json; return [{json:{job_id:j.job_id,worker_id:j.worker_id,error_code:'parser_failed',retryable:true}}];"
+      }
+    },
+    {
+      "id": "a1bd140b-ed22-415b-b186-16a436e91fec",
+      "name": "Registrar reintento",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        360
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://dadggurateghfumfcshz.supabase.co/functions/v1/molino-n8n-trigger",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ action: \"fail\", params: {p_job_id:$json.job_id,p_worker_id:$json.worker_id,p_error_code:$json.error_code,p_retryable:$json.retryable} }) }}",
+        "options": {
+          "timeout": 45000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": false
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lFukJttBNR46Wnyg",
+          "name": "Molino Control RPC Token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "id": "904dc4e5-6b02-4fa1-9076-a3d28af12312",
+      "name": "Estado de recuperación",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        360
+      ],
+      "parameters": {
+        "jsCode": "const r=$input.first().json;const j=r.data?.[0];if(r.ok!==true||!j?.id)throw new Error('No se pudo registrar el fallo.');if(j.status==='error')throw new Error(`Importación ${j.id}: intentos agotados. Revisar el trabajo en Supabase.`);return [{json:{ok:false,job_id:j.id,status:j.status,attempt_count:j.attempt_count,next_attempt_at:j.next_attempt_at,detalle:'Reintento programado; el siguiente sondeo retomará el trabajo.'}}];"
+      }
+    },
+    {
+      "id": "614d2ead-d19f-4b07-afc0-cebe827e5119",
+      "name": "Guía de activación",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -850,
+        -330
+      ],
+      "parameters": {
+        "content": "## Molino Control · Importación segura\n1. Seleccionar la credencial existente **Molino Control RPC Token**.\n2. Backend: migración de cola + Edge `molino-n8n-trigger` + parser Vercel.\n3. Ejecutar prueba con un trabajo controlado.\n4. Activar solo después de verificar el resultado.\n\nSin trabajo pendiente, termina sin procesar archivos. Cada 30 minutos: hasta 1.488 ejecuciones/mes; revisar la cuota de la cuenta.",
+        "width": 500,
+        "height": 330
+      }
+    },
+    {
+      "id": "d5aae8c9-55ff-400f-83c1-c3b8e101885f",
+      "name": "Alcance del resultado",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        -310
+      ],
+      "parameters": {
+        "content": "## Qué confirma este flujo\nHuella SHA-256, estructura del archivo y errores de celdas cacheadas. Guarda filas y hallazgos por trabajo/hoja/fila.\n\n**No recalcula Excel ni publica datos operacionales.** Las reglas NC, granel y fechas requieren la validación del motor Maestro antes de promover datos.\n\nToken en credenciales; `service_role` solo en Supabase Edge.",
+        "width": 550,
+        "height": 290
+      }
     }
   ],
   "connections": {
-    "Cada minuto": { "main": [[{ "node": "Crear contexto", "type": "main", "index": 0 }]] },
-    "Crear contexto": { "main": [[{ "node": "Tomar trabajo con lease", "type": "main", "index": 0 }]] },
-    "Tomar trabajo con lease": { "main": [[{ "node": "Normalizar trabajos", "type": "main", "index": 0 }]] },
-    "Normalizar trabajos": { "main": [[{ "node": "Crear URL firmada", "type": "main", "index": 0 }]] },
-    "Crear URL firmada": { "main": [[{ "node": "Procesar XLSX por streaming", "type": "main", "index": 0 }]] },
-    "Procesar XLSX por streaming": { "main": [[{ "node": "Cerrar validación", "type": "main", "index": 0 }]] },
-    "Cerrar validación": { "main": [[{ "node": "Confirmar staging", "type": "main", "index": 0 }]] }
+    "Ejecutar prueba": {
+      "main": [
+        [
+          {
+            "node": "Crear contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cada 30 minutos": {
+      "main": [
+        [
+          {
+            "node": "Crear contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear contexto": {
+      "main": [
+        [
+          {
+            "node": "Comprobar conexión",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comprobar conexión": {
+      "main": [
+        [
+          {
+            "node": "Tomar trabajo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tomar trabajo": {
+      "main": [
+        [
+          {
+            "node": "Trabajo disponible",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trabajo disponible": {
+      "main": [
+        [
+          {
+            "node": "Procesar Excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar Excel": {
+      "main": [
+        [
+          {
+            "node": "Validar respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar recuperación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar respuesta": {
+      "main": [
+        [
+          {
+            "node": "Guardar resultado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar recuperación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar resultado": {
+      "main": [
+        [
+          {
+            "node": "Resultado verificable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar recuperación": {
+      "main": [
+        [
+          {
+            "node": "Registrar reintento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar reintento": {
+      "main": [
+        [
+          {
+            "node": "Estado de recuperación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
   "pinData": {},
   "active": false,
-  "settings": { "executionOrder": "v1", "saveManualExecutions": true, "timezone": "America/Santiago" },
-  "meta": { "templateCredsSetupCompleted": false },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Santiago",
+    "executionTimeout": 480,
+    "saveManualExecutions": true,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "saveExecutionProgress": false
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
   "tags": []
 }

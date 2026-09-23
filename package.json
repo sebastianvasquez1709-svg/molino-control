@@ -12,6 +12,10 @@
     "uuid": "11.1.1"
   },
   "scripts": {
-    "check:n8n": "node --check api/n8n-import-parser.js && node --check molino-automation-import.js && node --check scripts/patch-n8n-import-panel-v1.js"
+    "check:n8n": "node --check api/n8n-import-parser.js && node --check molino-automation-import.js && node --check scripts/patch-n8n-import-panel-v1.js",
+    "test:n8n": "node --test tests/n8n-*.test.cjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.3.14"
   }
 }
